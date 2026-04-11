@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../navigation/app_navigation.dart';
 import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -12,13 +15,31 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-      }
-    });
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Initialize auth (reads token/role)
+    await authProvider.init();
+
+    // Small delay to ensure splash is visible for a moment
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (!mounted) return;
+
+    if (authProvider.isAuthenticated && authProvider.role != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => AppNavigation(role: authProvider.role!),
+        ),
+      );
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
   }
 
   @override
