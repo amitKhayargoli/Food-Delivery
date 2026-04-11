@@ -9,7 +9,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -38,13 +37,16 @@ enum OrderStatus {
 }
 
 model User {
-  id         String   @id @default(uuid())
-  name       String
-  phone      String   @unique
-  email      String?  @unique
-  role       Role     @default(USER)
-  status     String   @default("ACTIVE")
-  created_at DateTime @default(now())
+  id            String   @id @default(uuid())
+  username      String   @unique
+  email         String   @unique
+  phone         String   @unique
+  password_hash String?
+  google_id     String?  @unique
+  role          Role     @default(USER)
+  status        String   @default("ACTIVE")
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   // Relations
   addresses  Address[]
@@ -60,37 +62,37 @@ model Address {
   lng     Float
   label   String
 
-  user    User   @relation(fields: [user_id], references: [id])
+  user User @relation(fields: [user_id], references: [id])
 }
 
 model Restaurant {
-  id                 String   @id @default(uuid())
-  owner_id           String   @unique
+  id                 String  @id @default(uuid())
+  owner_id           String  @unique
   name               String
   desc               String?
   logo               String?
-  status             String   @default("ACTIVE")
-  rating             Float    @default(0.0)
-  base_delivery_time Int      @default(30)
+  status             String  @default("ACTIVE")
+  rating             Float   @default(0.0)
+  base_delivery_time Int     @default(30)
 
-  owner              User     @relation("OwnerRestaurant", fields: [owner_id], references: [id])
-  foods              Food[]
-  orders             Order[]
+  owner  User    @relation("OwnerRestaurant", fields: [owner_id], references: [id])
+  foods  Food[]
+  orders Order[]
 }
 
 model Food {
-  id            String     @id @default(uuid())
+  id            String  @id @default(uuid())
   restaurant_id String
   name          String
   desc          String?
   price         Float
   image         String?
   category_id   String?
-  availability  Boolean    @default(true)
+  availability  Boolean @default(true)
 
-  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id])
-  inventory     Inventory?
-  order_items   OrderItem[]
+  restaurant  Restaurant  @relation(fields: [restaurant_id], references: [id])
+  inventory   Inventory?
+  order_items OrderItem[]
 
   // Critical index for vendor queries
   @@index([restaurant_id])
@@ -101,7 +103,7 @@ model Inventory {
   stock_qty Int    @default(0)
   threshold Int    @default(5)
 
-  food      Food   @relation(fields: [food_id], references: [id])
+  food Food @relation(fields: [food_id], references: [id])
 }
 
 model Order {
@@ -115,11 +117,11 @@ model Order {
   payment_status String      @default("PENDING")
   created_at     DateTime    @default(now())
 
-  user           User        @relation(fields: [user_id], references: [id])
-  restaurant     Restaurant  @relation(fields: [restaurant_id], references: [id])
-  order_items    OrderItem[]
-  payment        Payment?
-  delivery       Delivery?
+  user        User        @relation(fields: [user_id], references: [id])
+  restaurant  Restaurant  @relation(fields: [restaurant_id], references: [id])
+  order_items OrderItem[]
+  payment     Payment?
+  delivery    Delivery?
 
   // Critical index for vendor queries
   @@index([restaurant_id])
@@ -131,33 +133,33 @@ model OrderItem {
   qty        Int
   unit_price Float
 
-  order      Order @relation(fields: [order_id], references: [id])
-  food       Food  @relation(fields: [food_id], references: [id])
+  order Order @relation(fields: [order_id], references: [id])
+  food  Food  @relation(fields: [food_id], references: [id])
 
   @@id([order_id, food_id])
 }
 
 model Payment {
-  order_id    String   @id
+  order_id    String    @id
   gateway     String
   txn_id      String?
   status      String
   verified_at DateTime?
   raw_payload Json?
 
-  order       Order    @relation(fields: [order_id], references: [id])
+  order Order @relation(fields: [order_id], references: [id])
 }
 
 model Delivery {
-  order_id         String    @id
-  delivery_boy_id  String
-  assigned_at      DateTime  @default(now())
-  picked_at        DateTime?
-  delivered_at     DateTime?
+  order_id        String    @id
+  delivery_boy_id String
+  assigned_at     DateTime  @default(now())
+  picked_at       DateTime?
+  delivered_at    DateTime?
 
-  order            Order     @relation(fields: [order_id], references: [id])
-  delivery_boy     User      @relation(fields: [delivery_boy_id], references: [id])
-  locations        DeliveryLocation[]
+  order        Order              @relation(fields: [order_id], references: [id])
+  delivery_boy User               @relation(fields: [delivery_boy_id], references: [id])
+  locations    DeliveryLocation[]
 }
 
 model DeliveryLocation {
@@ -169,7 +171,7 @@ model DeliveryLocation {
   heading     Float?
   timestamp   DateTime @default(now())
 
-  delivery    Delivery @relation(fields: [delivery_id], references: [order_id])
+  delivery Delivery @relation(fields: [delivery_id], references: [order_id])
 }
 
 model AuditLog {
