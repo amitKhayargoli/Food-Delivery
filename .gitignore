@@ -1,0 +1,11 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+
+.kilo/
+.idea
+kilo.json
+design_plan.md
+AGENTS.md
+
+.worktrees/
