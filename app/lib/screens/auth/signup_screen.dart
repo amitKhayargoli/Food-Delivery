@@ -5,28 +5,31 @@ import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/social_login_button.dart';
 import '../../navigation/app_navigation.dart';
-import 'signup_screen.dart';
+import 'login_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class SignUpScreen extends StatefulWidget {
+  const SignUpScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _identifierController = TextEditingController();
+class _SignUpScreenState extends State<SignUpScreen> {
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  void _login(String role) {
+  void _signUp() {
+    // For now we'll just mock sign up and go to home as USER
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => AppNavigation(role: role),
+        builder: (_) => const AppNavigation(role: 'USER'),
       ),
     );
   }
 
-  void _loginWithGoogle() async {
+  void _signUpWithGoogle() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.signInWithGoogle();
     if (authProvider.isAuthenticated && mounted) {
@@ -38,17 +41,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToSignUp() {
+  void _navigateToLogin() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => const SignUpScreen(),
+        builder: (_) => const LoginScreen(),
       ),
     );
   }
 
   @override
   void dispose() {
-    _identifierController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -65,17 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 60),
-              Center(
-                child: Icon(
-                  Icons.fastfood,
-                  size: 64,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 40),
               Text(
-                'Welcome back!',
+                'Create an Account',
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1A1A1A),
@@ -83,17 +80,30 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Enter your details to continue',
+                'Sign up to get started',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF8E8E93),
                 ),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 40),
               CustomTextField(
-                controller: _identifierController,
-                hintText: 'Email or Phone Number',
+                controller: _usernameController,
+                hintText: 'Username',
                 prefixIcon: Icons.person_outline,
+              ),
+              const SizedBox(height: 16),
+              CustomTextField(
+                controller: _emailController,
+                hintText: 'Email Address',
+                prefixIcon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+              CustomTextField(
+                controller: _phoneController,
+                hintText: 'Phone Number',
+                prefixIcon: Icons.phone_outlined,
+                keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 16),
               CustomTextField(
@@ -102,27 +112,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 prefixIcon: Icons.lock_outline,
                 obscureText: true,
               ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () {
-                    // TODO: Implement Forgot Password logic
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 0),
-                  ),
-                  child: const Text('Forgot Password?'),
-                ),
+              const SizedBox(height: 32),
+              PrimaryButton(
+                text: 'Sign Up',
+                onPressed: _signUp,
               ),
               const SizedBox(height: 24),
-              PrimaryButton(
-                text: 'Login',
-                onPressed: () => _login('USER'),
-              ),
-              const SizedBox(height: 32),
               Row(
                 children: [
                   const Expanded(child: Divider()),
@@ -136,25 +131,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Expanded(child: Divider()),
                 ],
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               SocialLoginButton(
                 text: 'Continue with Google',
-                onPressed: _loginWithGoogle,
+                onPressed: _signUpWithGoogle,
               ),
               const SizedBox(height: 32),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    "Don't have an account? ",
+                    'Already have an account? ',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: const Color(0xFF8E8E93),
                     ),
                   ),
                   GestureDetector(
-                    onTap: _navigateToSignUp,
+                    onTap: _navigateToLogin,
                     child: Text(
-                      'Sign Up',
+                      'Login',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.primary,
                         fontWeight: FontWeight.bold,
