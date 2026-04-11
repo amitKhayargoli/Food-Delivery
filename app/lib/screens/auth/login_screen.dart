@@ -7,6 +7,8 @@ import '../../widgets/social_login_button.dart';
 import '../../navigation/app_navigation.dart';
 import 'signup_screen.dart';
 
+import 'complete_profile_screen.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -28,12 +30,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _loginWithGoogle() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.signInWithGoogle();
-    if (authProvider.isAuthenticated && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const AppNavigation(role: 'USER'),
-        ),
+    final result = await authProvider.signInWithGoogle();
+    
+    if (result['success'] == true && mounted) {
+      if (result['requires_profile_completion'] == true) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CompleteProfileScreen(
+              initialName: result['name'] ?? '',
+              googleToken: result['token'] ?? '',
+            ),
+          ),
+        );
+      } else if (authProvider.isAuthenticated) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const AppNavigation(role: 'USER'),
+          ),
+        );
+      }
+    } else if (result['success'] == false && mounted) {
+      final error = result['error'] ?? 'Sign in failed';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
       );
     }
   }
