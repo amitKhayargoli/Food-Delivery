@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/models.dart';
 import '../../cart_provider.dart';
+import '../../state_providers.dart';
 
-class RestaurantMenuScreen extends StatelessWidget {
+import 'food_details_screen.dart';
+import 'cart_screen.dart';
+
+class RestaurantMenuScreen extends ConsumerWidget {
   final Restaurant restaurant;
 
   const RestaurantMenuScreen({super.key, required this.restaurant});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -120,7 +124,7 @@ class RestaurantMenuScreen extends StatelessWidget {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final food = restaurant.foods[index];
-                return _buildFoodItem(context, food);
+                return _buildFoodItem(context, food, ref);
               },
               childCount: restaurant.foods.length,
             ),
@@ -128,31 +132,30 @@ class RestaurantMenuScreen extends StatelessWidget {
           const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
         ],
       ),
-      floatingActionButton: Consumer<CartProvider>(
-        builder: (context, cart, child) {
-          if (cart.itemCount == 0) return const SizedBox.shrink();
-          
-          return FloatingActionButton.extended(
-            onPressed: () {
-              // Navigate to checkout
-            },
-            backgroundColor: theme.colorScheme.primary,
-            label: Row(
-              children: [
-                const Icon(Icons.shopping_cart, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(
-                  '${cart.itemCount} items | Rs ${cart.subtotal.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+      floatingActionButton: () {
+        final cart = ref.watch(cartStateProvider);
+        if (cart.itemCount == 0) return const SizedBox.shrink();
+
+        return FloatingActionButton.extended(
+          onPressed: () {
+            // Navigate to checkout
+          },
+          backgroundColor: theme.colorScheme.primary,
+          label: Row(
+            children: [
+              const Icon(Icons.shopping_cart, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                '${cart.itemCount} items | Rs ${cart.subtotal.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        );
+      }(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
@@ -173,10 +176,22 @@ class RestaurantMenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFoodItem(BuildContext context, Food food) {
+  Widget _buildFoodItem(BuildContext context, Food food, WidgetRef ref) {
     final theme = Theme.of(context);
     
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FoodDetailsScreen(
+              food: food,
+              restaurant: restaurant,
+            ),
+          ),
+        );
+      },
+      child: Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -239,12 +254,14 @@ class RestaurantMenuScreen extends StatelessWidget {
                     InkWell(
                       onTap: () {
                         try {
-                          context.read<CartProvider>().addItem(
-                                restaurant.id,
+                          ref.read(cartStateProvider).addItem(
                                 CartItem(
+                                  id: food.id,
                                   foodId: food.id,
                                   name: food.name,
                                   price: food.price,
+                                  restaurantId: restaurant.id,
+                                  restaurantName: restaurant.name,
                                 ),
                               );
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -263,7 +280,7 @@ class RestaurantMenuScreen extends StatelessWidget {
                                 label: 'Clear Cart',
                                 textColor: Colors.white,
                                 onPressed: () {
-                                  context.read<CartProvider>().clearCart();
+                                  ref.read(cartStateProvider).clearCart();
                                 },
                               ),
                             ),
@@ -295,6 +312,7 @@ class RestaurantMenuScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

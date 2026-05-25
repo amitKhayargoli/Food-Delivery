@@ -1,24 +1,32 @@
 import 'package:flutter/material.dart';
 
 class CartItem {
+  final String id; // unique id combining foodId and specialInstructions
   final String foodId;
   final String name;
   final double price;
+  final String restaurantId;
+  final String restaurantName;
+  final String? imageUrl;
+  final String specialInstructions;
   int quantity;
 
   CartItem({
+    required this.id,
     required this.foodId,
     required this.name,
     required this.price,
+    required this.restaurantId,
+    required this.restaurantName,
+    this.imageUrl,
+    this.specialInstructions = '',
     this.quantity = 1,
   });
 }
 
 class CartProvider with ChangeNotifier {
-  String? _restaurantId;
   final Map<String, CartItem> _items = {};
 
-  String? get restaurantId => _restaurantId;
   Map<String, CartItem> get items => {..._items};
 
   int get itemCount => _items.length;
@@ -31,42 +39,32 @@ class CartProvider with ChangeNotifier {
     return total;
   }
 
-  void addItem(String restaurantId, CartItem item) {
-    if (_restaurantId != null && _restaurantId != restaurantId) {
-      throw Exception('You can only order from one restaurant at a time. Please clear your cart to order from a different restaurant.');
-    }
-
-    _restaurantId = restaurantId;
-
-    if (_items.containsKey(item.foodId)) {
-      _items[item.foodId]!.quantity += item.quantity;
+  void addItem(CartItem item) {
+    if (_items.containsKey(item.id)) {
+      _items[item.id]!.quantity += item.quantity;
     } else {
-      _items[item.foodId] = item;
+      _items[item.id] = item;
     }
     notifyListeners();
   }
 
-  void removeItem(String foodId) {
-    _items.remove(foodId);
-    if (_items.isEmpty) {
-      _restaurantId = null;
-    }
+  void removeItem(String id) {
+    _items.remove(id);
     notifyListeners();
   }
 
-  void updateQuantity(String foodId, int quantity) {
-    if (!_items.containsKey(foodId)) return;
+  void updateQuantity(String id, int quantity) {
+    if (!_items.containsKey(id)) return;
     if (quantity <= 0) {
-      removeItem(foodId);
+      removeItem(id);
     } else {
-      _items[foodId]!.quantity = quantity;
+      _items[id]!.quantity = quantity;
       notifyListeners();
     }
   }
 
   void clearCart() {
     _items.clear();
-    _restaurantId = null;
     notifyListeners();
   }
 }
