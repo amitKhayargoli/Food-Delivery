@@ -43,7 +43,7 @@ class _AppNavigationState extends State<AppNavigation> {
   ];
 
   List<Widget> get _currentScreens {
-    switch (widget.role) {
+    switch (widget.role.toUpperCase()) {
       case 'ADMIN': return _adminScreens;
       case 'RESTAURANT_OWNER': return _ownerScreens;
       case 'DELIVERY_BOY': return _deliveryScreens;
@@ -77,7 +77,7 @@ class _AppNavigationState extends State<AppNavigation> {
   ];
 
   List<BottomNavigationBarItem> get _currentItems {
-    switch (widget.role) {
+    switch (widget.role.toUpperCase()) {
       case 'ADMIN': return _adminItems;
       case 'RESTAURANT_OWNER': return _ownerItems;
       case 'DELIVERY_BOY': return _deliveryItems;
