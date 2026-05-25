@@ -138,7 +138,10 @@ class RestaurantMenuScreen extends ConsumerWidget {
 
         return FloatingActionButton.extended(
           onPressed: () {
-            // Navigate to checkout
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const CartScreen()),
+            );
           },
           backgroundColor: theme.colorScheme.primary,
           label: Row(

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import 'restaurant_menu_screen.dart';
+import 'delivery_address_map_screen.dart';
+import 'selected_delivery_location.dart';
+
+import 'cart_screen.dart';
 
 class UserHomeScreen extends StatefulWidget {
   const UserHomeScreen({super.key});
@@ -12,6 +16,7 @@ class UserHomeScreen extends StatefulWidget {
 
 class _UserHomeScreenState extends State<UserHomeScreen> {
   String _selectedCategoryId = 'all';
+  String _currentAddress = 'Kathmandu, Nepal';
 
   @override
   Widget build(BuildContext context) {
@@ -20,27 +25,56 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Delivering to',
-              style: theme.textTheme.bodySmall,
-            ),
-            Row(
-              children: [
-                Text(
-                  'Kathmandu, Nepal',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+        title: InkWell(
+          onTap: () async {
+            final result = await Navigator.push<SelectedDeliveryLocation>(
+              context,
+              MaterialPageRoute(builder: (context) => const DeliveryAddressMapScreen()),
+            );
+
+            if (result != null) {
+              setState(() {
+                _currentAddress = result.address;
+              });
+            }
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Delivering to',
+                style: theme.textTheme.bodySmall,
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _currentAddress,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                const Icon(Icons.keyboard_arrow_down, size: 20),
-              ],
-            ),
-          ],
+                  const Icon(Icons.keyboard_arrow_down, size: 20),
+                ],
+              ),
+            ],
+          ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.shopping_cart_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CartScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_none),
             onPressed: () {},
