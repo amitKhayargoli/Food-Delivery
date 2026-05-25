@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthProvider with ChangeNotifier {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
   
   String? _token;
   String? _role;
@@ -52,6 +54,27 @@ class AuthProvider with ChangeNotifier {
     await prefs.setString('username', username);
 
     notifyListeners();
+  }
+
+  Future<void> signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        return; // User canceled the sign-in
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken != null) {
+        // Here you would typically send the idToken to your backend API
+        // For now, we simulate a successful login using the idToken
+        await login(idToken, 'USER', googleUser.displayName ?? 'Google User');
+      }
+    } catch (error) {
+      debugPrint('Error signing in with Google: $error');
+      // In a real app, you should throw the error or handle it to show UI feedback
+    }
   }
 
   Future<void> logout() async {
