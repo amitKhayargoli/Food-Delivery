@@ -45,24 +45,19 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.primary,
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.restaurant_menu,
-              size: 100,
-              color: Colors.white,
+            Image.asset(
+              'assets/img/logo.png',
+              width: 200,
+              fit: BoxFit.contain,
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Rasoi',
-              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF5222D)),
             ),
           ],
         ),

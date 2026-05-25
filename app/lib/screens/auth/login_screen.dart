@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/custom_text_field.dart';
-import '../../widgets/primary_button.dart';
-import '../../widgets/social_login_button.dart';
 import '../../navigation/app_navigation.dart';
-import 'signup_screen.dart';
-
 import 'complete_profile_screen.dart';
+import 'otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,21 +13,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _identifierController = TextEditingController();
-  final _passwordController = TextEditingController();
-
-  void _login(String role) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => AppNavigation(role: role),
-      ),
-    );
-  }
+  final _phoneController = TextEditingController();
 
   void _loginWithGoogle() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final result = await authProvider.signInWithGoogle();
-    
+
     if (result['success'] == true && mounted) {
       if (result['requires_profile_completion'] == true) {
         Navigator.of(context).push(
@@ -57,134 +44,258 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToSignUp() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => const SignUpScreen(),
-      ),
-    );
-  }
-
   @override
   void dispose() {
-    _identifierController.dispose();
-    _passwordController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 60),
-              Center(
-                child: Icon(
-                  Icons.fastfood,
-                  size: 64,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 32),
-              Text(
-                'Welcome back!',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF1A1A1A),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Enter your details to continue',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: const Color(0xFF8E8E93),
-                ),
-              ),
-              const SizedBox(height: 48),
-              CustomTextField(
-                controller: _identifierController,
-                hintText: 'Email or Phone Number',
-                prefixIcon: Icons.person_outline,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-              CustomTextField(
-                controller: _passwordController,
-                hintText: 'Password',
-                prefixIcon: Icons.lock_outline,
-                obscureText: true,
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () {
-                    // TODO: Implement Forgot Password logic
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 0),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 320),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.only(top: 117, bottom: 75),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFF5222D), // 0%
+                      Color(0xFFFFFFFF), // 100%
+                    ],
+                    stops: [0.0, 1.0],
                   ),
-                  child: const Text('Forgot Password?'),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/img/logo.png',
+                      width: 200,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Welcome Back',
+                      style: TextStyle(
+                        color: Color(0xFF1A1A1A),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w600,
+                        height: 1.50,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Sign in to continue',
+                      style: TextStyle(
+                        color: Color(0xFF595959),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w400,
+                        height: 1.50,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                text: 'Login',
-                onPressed: () => _login('USER'),
-              ),
-              const SizedBox(height: 32),
-              Row(
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.only(top: 24, left: 24, right: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(
-                      'OR',
-                      style: theme.textTheme.bodySmall,
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Enter Your Phone Number',
+                    style: TextStyle(
+                      color: Color(0xFF262626),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      height: 1.50,
                     ),
                   ),
-                  const Expanded(child: Divider()),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    decoration: ShapeDecoration(
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(width: 1, color: Color(0xFFE8E8E8)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('🇳🇵', style: TextStyle(fontSize: 20)),
+                        const Text(
+                          '+977',
+                          style: TextStyle(
+                            color: Color(0xFF595959),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            height: 1.50,
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 32,
+                          margin: const EdgeInsets.symmetric(horizontal: 12),
+                          color: const Color(0xFFE8E8E8),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              hintText: '98XXXXXXXX',
+                              hintStyle: TextStyle(
+                                color: Color(0xFFBFBFBF),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                              ),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 32),
-              SocialLoginButton(
-                text: 'Continue with Google',
-                onPressed: _loginWithGoogle,
-              ),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.only(top: 24, left: 24, right: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    "Don't have an account? ",
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF8E8E93),
-                    ),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(color: Color(0xFFE8E8E8))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'Or',
+                          style: TextStyle(
+                            color: const Color(0xFF8C8C8C),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                            height: 1.50,
+                          ),
+                        ),
+                      ),
+                      const Expanded(child: Divider(color: Color(0xFFE8E8E8))),
+                    ],
                   ),
-                  GestureDetector(
-                    onTap: _navigateToSignUp,
-                    child: Text(
-                      'Sign Up',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(height: 20),
+                  InkWell(
+                    onTap: _loginWithGoogle,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      decoration: ShapeDecoration(
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          side: const BorderSide(width: 1, color: Color(0xFFD9D9D9)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/img/google.png',
+                            width: 20,
+                            height: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Continue with Google',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF262626),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              height: 1.50,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-            ],
-          ),
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OtpScreen()),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF5222D),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      height: 1.50,
+                    ),
+                  ),
+                  child: const Text('Continue'),
+                ),
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.only(top: 24, left: 24, right: 24, bottom: 20),
+              child: RichText(
+                textAlign: TextAlign.center,
+                text: const TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'By continuing, you agree to our ',
+                      style: TextStyle(color: Color(0xFF8C8C8C), fontSize: 12),
+                    ),
+                    TextSpan(
+                      text: 'Terms of Service',
+                      style: TextStyle(color: Color(0xFFF5222D), fontSize: 12),
+                    ),
+                    TextSpan(
+                      text: ' and ',
+                      style: TextStyle(color: Color(0xFF8C8C8C), fontSize: 12),
+                    ),
+                    TextSpan(
+                      text: 'Privacy\nPolicy',
+                      style: TextStyle(color: Color(0xFFF5222D), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
