@@ -56,11 +56,11 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signInWithGoogle() async {
+  Future<Map<String, dynamic>> signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        return; // User canceled the sign-in
+        return {'success': false, 'error': 'User canceled the sign-in'};
       }
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
@@ -68,13 +68,41 @@ class AuthProvider with ChangeNotifier {
 
       if (idToken != null) {
         // Here you would typically send the idToken to your backend API
-        // For now, we simulate a successful login using the idToken
-        await login(idToken, 'USER', googleUser.displayName ?? 'Google User');
+        // For now, we simulate that a new user needs profile completion
+        // Set to true to simulate a new Google sign-in requiring phone and username
+        bool requiresProfileCompletion = true; 
+
+        if (requiresProfileCompletion) {
+          return {
+            'success': true,
+            'requires_profile_completion': true,
+            'email': googleUser.email,
+            'name': googleUser.displayName ?? 'Google User',
+            'token': idToken,
+          };
+        } else {
+          await login(idToken, 'USER', googleUser.displayName ?? 'Google User');
+          return {
+            'success': true,
+            'requires_profile_completion': false,
+          };
+        }
       }
+      return {'success': false, 'error': 'Token is null'};
     } catch (error) {
       debugPrint('Error signing in with Google: $error');
-      // In a real app, you should throw the error or handle it to show UI feedback
+      return {'success': false, 'error': error.toString()};
     }
+  }
+
+  Future<void> completeProfile({
+    required String phone,
+    required String username,
+    required String token,
+  }) async {
+    // Ideally send the phone and username along with the token to backend
+    // For now, mock a successful login
+    await login(token, 'USER', username);
   }
 
   Future<void> logout() async {
