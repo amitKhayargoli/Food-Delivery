@@ -113,8 +113,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Email is required';
-                    if (!value.contains('@')) return 'Enter a valid email';
+                    final email = value?.trim() ?? '';
+                    if (email.isEmpty) return 'Email is required';
+                    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+                    if (!emailRegex.hasMatch(email)) return 'Please enter a valid email address';
                     return null;
                   },
                 ),
@@ -127,8 +129,12 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                   prefixIcon: Icons.phone_outlined,
                   keyboardType: TextInputType.phone,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Phone number is required';
-                    if (value.length < 10) return 'Enter a valid 10-digit number';
+                    final phone = value?.trim() ?? '';
+                    if (phone.isEmpty) return 'Phone number is required';
+                    if (phone.length != 10) return 'Phone number must be exactly 10 digits';
+                    if (!RegExp(r'^9\d{9}$').hasMatch(phone)) {
+                      return 'Phone number must start with 9 and contain only digits';
+                    }
                     return null;
                   },
                 ),

@@ -14,6 +14,30 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
+  String? _phoneError;
+
+  bool _validatePhone() {
+    final phone = _phoneController.text.trim();
+    final phoneRegex = RegExp(r'^9\d{9}$');
+
+    if (phone.isEmpty) {
+      setState(() => _phoneError = 'Phone number is required');
+      return false;
+    }
+
+    if (phone.length != 10) {
+      setState(() => _phoneError = 'Phone number must be exactly 10 digits');
+      return false;
+    }
+
+    if (!phoneRegex.hasMatch(phone)) {
+      setState(() => _phoneError = 'Phone number must start with 9 and contain only digits');
+      return false;
+    }
+
+    setState(() => _phoneError = null);
+    return true;
+  }
 
   void _loginWithGoogle() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -154,9 +178,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           color: const Color(0xFFE8E8E8),
                         ),
                         Expanded(
-                          child: TextField(
+                          child:                          TextField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
+                            onChanged: (_) {
+                              if (_phoneError != null) {
+                                setState(() => _phoneError = null);
+                              }
+                            },
                             decoration: const InputDecoration(
                               hintText: '98XXXXXXXX',
                               hintStyle: TextStyle(
@@ -173,6 +202,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
+                  if (_phoneError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _phoneError!,
+                        style: const TextStyle(
+                          color: Color(0xFFF5222D),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -248,8 +289,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 56,
                 child: ElevatedButton(
                   onPressed: () {
+                    if (!_validatePhone()) return;
+                    final phone = _phoneController.text.trim();
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const OtpScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => OtpScreen(
+                          phone: phone,
+                          purpose: 'LOGIN',
+                        ),
+                      ),
                     );
                   },
                   style: ElevatedButton.styleFrom(
