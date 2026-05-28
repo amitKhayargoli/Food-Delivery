@@ -5,8 +5,6 @@ import 'restaurant_menu_screen.dart';
 import 'delivery_address_map_screen.dart';
 import 'selected_delivery_location.dart';
 
-import 'cart_screen.dart';
-
 class UserHomeScreen extends StatefulWidget {
   const UserHomeScreen({super.key});
 
@@ -15,335 +13,456 @@ class UserHomeScreen extends StatefulWidget {
 }
 
 class _UserHomeScreenState extends State<UserHomeScreen> {
-  String _selectedCategoryId = 'all';
-  String _currentAddress = 'Kathmandu, Nepal';
+  String _currentAddress = 'Jhamsikhel, Lalitpur';
+
+  // Discount offers mapped by restaurant ID
+  static const Map<String, String> _restaurantDiscounts = {
+    'r1': 'Flat 30% OFF',
+    'r2': 'Flat 10% OFF',
+    'r3': 'Flat 20% OFF',
+  };
+
+  static const List<Map<String, dynamic>> _topPicks = [
+    {'name': 'Thai Delight', 'rating': 4.6, 'time': '28 mins', 'discount': 'Flat 25% OFF'},
+    {'name': 'Pasta Palace', 'rating': 4.5, 'time': '30 mins', 'discount': 'Flat 20% OFF'},
+    {'name': 'Noodle Bar', 'rating': 4.4, 'time': '22 mins', 'discount': 'Flat 30% OFF'},
+  ];
+
+  // Map top picks to actual restaurants
+  List<Restaurant> _getTopPickRestaurants() {
+    return mockRestaurants.take(_topPicks.length).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final topPickRestaurants = _getTopPickRestaurants();
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(
-        title: InkWell(
-          onTap: () async {
-            final result = await Navigator.push<SelectedDeliveryLocation>(
-              context,
-              MaterialPageRoute(builder: (context) => const DeliveryAddressMapScreen()),
-            );
-
-            if (result != null) {
-              setState(() {
-                _currentAddress = result.address;
-              });
-            }
-          },
+      backgroundColor: const Color(0xFFFFFFFF),
+      body: SafeArea(
+        child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Delivering to',
-                style: theme.textTheme.bodySmall,
+              // ── Location Header ──
+              _buildLocationHeader(context),
+
+              // ── Promo Banner ──
+              _buildPromoBanner(context),
+
+              // ── New Near You Section ──
+              _buildSectionHeader(context, 'New Near You', onSeeAll: () {}),
+              _buildRestaurantHorizontalList(
+                context,
+                restaurants: mockRestaurants,
+                discounts: _restaurantDiscounts,
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      _currentAddress,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const Icon(Icons.keyboard_arrow_down, size: 20),
-                ],
+
+              // ── Top Picks For You Section ──
+              _buildSectionHeader(context, 'Top Picks For You', onSeeAll: () {}),
+              _buildRestaurantHorizontalList(
+                context,
+                restaurants: topPickRestaurants,
+                discounts: {
+                  for (int i = 0; i < topPickRestaurants.length; i++)
+                    topPickRestaurants[i].id: _topPicks[i]['discount'] as String,
+                },
               ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.shopping_cart_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CartScreen()),
-              );
-            },
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Location Header
+  // ──────────────────────────────────────────────
+
+  Widget _buildLocationHeader(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        final result = await Navigator.push<SelectedDeliveryLocation>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const DeliveryAddressMapScreen(),
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
+        );
+        if (result != null && mounted) {
+          setState(() => _currentAddress = result.address);
+        }
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x0A000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF0F0),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.location_on_outlined,
+                color: Color(0xFFF5222D),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Delivering To',
+                    style: TextStyle(
+                      color: const Color(0xFF262626),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _currentAddress,
+                          style: const TextStyle(
+                            color: Color(0xFF8C8C8C),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: Color(0xFF8C8C8C),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Section Header
+  // ──────────────────────────────────────────────
+
+  Widget _buildSectionHeader(
+    BuildContext context,
+    String title, {
+    VoidCallback? onSeeAll,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF262626),
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          GestureDetector(
+            onTap: onSeeAll,
+            child: Text(
+              'See all',
+              style: const TextStyle(
+                color: Color(0xFFF5222D),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Search Bar
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search food, restaurants...',
-                    hintStyle: const TextStyle(color: Color(0xFF8E8E93)),
-                    prefixIcon: const Icon(Icons.search, color: Color(0xFF8E8E93)),
-                    suffixIcon: const Icon(Icons.mic, color: Color(0xFF8E8E93)),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Banner Promo Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildPromoBanner(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      height: 170,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFF5222D), Color(0xFFFF7A45)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Image.asset(
+              'assets/img/BannerPizza.png',
+              height: 120,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Free Delivery',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-            ),
-
-            // Category Filter
-            SizedBox(
-              height: 100,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: mockCategories.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return _buildCategoryChip(
-                      id: 'all',
-                      name: 'All',
-                      icon: '🍽️',
-                      isSelected: _selectedCategoryId == 'all',
-                    );
-                  }
-                  final category = mockCategories[index - 1];
-                  return _buildCategoryChip(
-                    id: category.id,
-                    name: category.name,
-                    icon: category.imageUrl,
-                    isSelected: _selectedCategoryId == category.id,
-                  );
-                },
-              ),
-            ),
-
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                'Explore Restaurants',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A),
+                const SizedBox(height: 4),
+                const Text(
+                  'on orders over',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
-              ),
+                const Text(
+                  'Rs. 500',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Order Now',
+                    style: TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
-
-            // Restaurant Grid
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: mockRestaurants.length,
-              itemBuilder: (context, index) {
-                final restaurant = mockRestaurants[index];
-                return _buildRestaurantCard(context, restaurant);
-              },
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCategoryChip({
-    required String id,
-    required String name,
-    required String icon,
-    required bool isSelected,
+  Widget _buildRestaurantHorizontalList(
+    BuildContext context, {
+    required List<Restaurant> restaurants,
+    required Map<String, String> discounts,
   }) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
-    return GestureDetector(
-      onTap: () => setState(() => _selectedCategoryId = id),
-      child: Container(
-        margin: const EdgeInsets.only(right: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              height: 60,
-              width: 60,
-              decoration: BoxDecoration(
-                color: isSelected ? primaryColor.withOpacity(0.1) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSelected ? primaryColor : Colors.transparent,
-                  width: 2,
-                ),
-                boxShadow: isSelected
-                    ? []
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-              ),
-              child: Center(
-                child: Text(
-                  icon,
-                  style: const TextStyle(fontSize: 28),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? primaryColor : const Color(0xFF1A1A1A),
-              ),
-            ),
-          ],
-        ),
+    return SizedBox(
+      height: 230,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: restaurants.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final restaurant = restaurants[index];
+          final discount = discounts[restaurant.id];
+          return _buildRestaurantCard(
+            context,
+            restaurant: restaurant,
+            discount: discount,
+          );
+        },
       ),
     );
   }
 
-  Widget _buildRestaurantCard(BuildContext context, Restaurant restaurant) {
+  // ──────────────────────────────────────────────
+  // Restaurant Card
+  // ──────────────────────────────────────────────
+
+  Widget _buildRestaurantCard(
+    BuildContext context, {
+    required Restaurant restaurant,
+    String? discount,
+  }) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => RestaurantMenuScreen(restaurant: restaurant),
+            builder: (context) => RestaurantMenuScreen(
+              restaurant: restaurant,
+            ),
           ),
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
+        width: 160,
+        decoration: ShapeDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(width: 1, color: Color(0xFFF0F0F0)),
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Image + Discount Badge ──
             Stack(
               children: [
                 Image.network(
                   restaurant.bannerUrl,
-                  height: 150,
-                  width: double.infinity,
+                  height: 120,
+                  width: 160,
                   fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    height: 120,
+                    width: 160,
+                    color: const Color(0xFFF0F0F0),
+                    child: const Icon(
+                      Icons.restaurant,
+                      color: Color(0xFFBFBFBF),
+                      size: 32,
+                    ),
+                  ),
                 ),
+                if (discount != null)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: ShapeDecoration(
+                        color: const Color(0xFFF5222D),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(
+                        discount,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Favorite button
                 Positioned(
-                  top: 12,
-                  right: 12,
+                  right: 6,
+                  top: 6,
                   child: Container(
-                    padding: const EdgeInsets.all(8),
+                    width: 28,
+                    height: 28,
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.favorite_border,
-                      size: 20,
-                      color: Color(0xFF8E8E93),
+                      size: 16,
+                      color: Color(0xFF595959),
                     ),
                   ),
                 ),
               ],
             ),
+
+            // ── Card Details ──
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    restaurant.name,
+                    style: const TextStyle(
+                      color: Color(0xFF262626),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  // Rating row
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        restaurant.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A1A),
-                        ),
+                      const Icon(
+                        Icons.star,
+                        size: 14,
+                        color: Color(0xFFFFC107),
                       ),
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 18),
-                          const SizedBox(width: 4),
-                          Text(
-                            restaurant.rating.toString(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 4),
+                      Text(
+                        restaurant.rating.toString(),
+                        style: const TextStyle(
+                          color: Color(0xFF595959),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    restaurant.description,
-                    style: const TextStyle(
-                      color: Color(0xFF8E8E93),
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  // Delivery time row
                   Row(
                     children: [
-                      const Icon(Icons.access_time, size: 16, color: Color(0xFF8E8E93)),
+                      const Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: Color(0xFF8C8C8C),
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '${restaurant.deliveryTimeMinutes} mins',
                         style: const TextStyle(
-                          color: Color(0xFF8E8E93),
+                          color: Color(0xFF8C8C8C),
                           fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.delivery_dining, size: 16, color: Color(0xFFFF5733)),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Free Delivery',
-                        style: TextStyle(
-                          color: Color(0xFFFF5733),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],

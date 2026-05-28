@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../screens/user/home_screen.dart';
+import '../screens/user/cart_screen.dart';
 import '../screens/owner/owner_dashboard_screen.dart';
 import '../screens/owner/owner_menu_screen.dart';
 import '../screens/owner/owner_analytics_screen.dart';
@@ -20,8 +22,10 @@ class _AppNavigationState extends State<AppNavigation> {
 
   List<Widget> get _userScreens => [
     const UserHomeScreen(),
-    const Center(child: Text('User Orders')),
-    const Center(child: Text('User Profile')),
+    const Center(child: Text('Search')),
+    const Center(child: Text('Your Orders')),
+    const CartScreen(),
+    const Center(child: Text('Profile')),
   ];
 
   List<Widget> get _adminScreens => [
@@ -52,10 +56,27 @@ class _AppNavigationState extends State<AppNavigation> {
     }
   }
 
-  List<BottomNavigationBarItem> get _userItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-    BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Orders'),
-    BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+  BottomNavigationBarItem _navItem(String path, String label, bool selected) {
+    return BottomNavigationBarItem(
+      icon: SvgPicture.asset(
+        path,
+        width: 24,
+        height: 24,
+        colorFilter: ColorFilter.mode(
+          selected ? const Color(0xFFF5222D) : const Color(0xFF8E8E93),
+          BlendMode.srcIn,
+        ),
+      ),
+      label: label,
+    );
+  }
+
+  List<BottomNavigationBarItem> _buildUserItems(int index) => [
+    _navItem('assets/icons/home.svg', 'Home', index == 0),
+    _navItem('assets/icons/search.svg', 'Search', index == 1),
+    _navItem('assets/icons/orders.svg', 'Orders', index == 2),
+    _navItem('assets/icons/cart.svg', 'Cart', index == 3),
+    _navItem('assets/icons/profile.svg', 'Profile', index == 4),
   ];
 
   List<BottomNavigationBarItem> get _adminItems => const [
@@ -82,20 +103,18 @@ class _AppNavigationState extends State<AppNavigation> {
       case 'RESTAURANT_OWNER': return _ownerItems;
       case 'DELIVERY_BOY': return _deliveryItems;
       case 'USER':
-      default: return _userItems;
+      default: return _buildUserItems(_currentIndex);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
     return Scaffold(
       body: _currentScreens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: theme.colorScheme.primary,
+        selectedItemColor: const Color(0xFFF5222D),
         unselectedItemColor: const Color(0xFF8E8E93),
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
