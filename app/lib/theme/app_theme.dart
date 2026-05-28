@@ -15,7 +15,7 @@ class AppTheme {
   
   static const Color successGreen = Color(0xFF4CAF50);
   static const Color errorRed = Colors.red;
-  static final Color shadowColor = Colors.black.withOpacity(0.05);
+  static final Color shadowColor = Colors.black.withValues(alpha: 0.05);
 
   // Dimensions
   static const double pillRadius = 100.0;
@@ -58,7 +58,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         color: pureWhite,
-        shadowColor: Colors.black.withOpacity(0.05),
+        shadowColor: Colors.black.withValues(alpha: 0.05),
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),

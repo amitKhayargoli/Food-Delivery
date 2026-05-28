@@ -1,20 +1,50 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
+import 'package:provider/provider.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
+import '../../providers/auth_provider.dart';
+import '../../navigation/app_navigation.dart';
 
-class OtpScreen extends ConsumerStatefulWidget {
-  const OtpScreen({super.key});
+class OtpScreen extends StatefulWidget {
+  final String phone;
+  final String purpose; // LOGIN or SIGNUP
+  final String? username; // Only needed for SIGNUP
+
+  const OtpScreen({
+    super.key,
+    required this.phone,
+    this.purpose = 'LOGIN',
+    this.username,
+  });
 
   @override
-  ConsumerState<OtpScreen> createState() => _OtpScreenState();
+  State<OtpScreen> createState() => _OtpScreenState();
 }
 
-class _OtpScreenState extends ConsumerState<OtpScreen> {
+class _OtpScreenState extends State<OtpScreen> {
   final List<TextEditingController> _controllers = List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  final ApiService _apiService = di.sl<ApiService>();
+
+  bool _isLoading = false;
+  bool _isSendingOtp = true;
+  String? _errorMessage;
+  String? _expiresAt;
+  int _remainingSeconds = 600; // 10 minutes default
+
+  @override
+  void initState() {
+    super.initState();
+    _sendOtpToPhone();
+    _startCountdown();
+  }
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (var controller in _controllers) {
       controller.dispose();
     }
@@ -24,17 +54,158 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     super.dispose();
   }
 
-  void _verifyOtp() {
-    String otp = _controllers.map((c) => c.text).join();
+  Timer? _timer;
+
+  void _startCountdown() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_remainingSeconds > 0) {
+          _remainingSeconds--;
+        } else {
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _sendOtpToPhone() async {
+    setState(() {
+      _isSendingOtp = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.sendOtp(
+        phone: widget.phone,
+        purpose: widget.purpose,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSendingOtp = false;
+        _expiresAt = response.expiresAt;
+        _remainingSeconds = 600;
+      });
+      _startCountdown();
+
+      if (kDebugMode) {
+        debugPrint('OTP sent successfully. Expires at: ${response.expiresAt}');
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSendingOtp = false;
+        _errorMessage = e.message;
+      });
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final otp = _controllers.map((c) => c.text).join();
+
     if (otp.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter all 6 digits')),
       );
       return;
     }
-    
-    // TODO: Implement OTP verification logic with AuthViewModel
-    debugPrint('Verifying OTP: $otp');
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.verifyOtp(
+        phone: widget.phone,
+        otp: otp,
+        username: widget.username,
+      );
+
+      if (!mounted) return;
+
+      if (response.isSuccess && response.token != null) {
+        // Store auth and navigate
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        await authProvider.login(
+          response.token!,
+          response.user?.role ?? 'USER',
+          response.user?.username ?? 'User',
+        );
+
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => AppNavigation(role: response.user?.role ?? 'USER'),
+          ),
+        );
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Verification failed. Please try again.';
+        });
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.message;
+      });
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    setState(() {
+      _isSendingOtp = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.resendOtp(
+        phone: widget.phone,
+        purpose: widget.purpose,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSendingOtp = false;
+        _expiresAt = response.expiresAt;
+        _remainingSeconds = 600;
+      });
+      _startCountdown();
+
+      // Clear OTP fields
+      for (var controller in _controllers) {
+        controller.clear();
+      }
+      _focusNodes.first.requestFocus();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('OTP resent successfully'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSendingOtp = false;
+        _errorMessage = e.message;
+      });
+    }
   }
 
   @override
@@ -53,7 +224,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFFF5F5), Colors.white],
+                  colors: [
+                    Color(0xFFF5222D),
+                    Color(0xFFFFFFFF),
+                  ],
+                  stops: [0.0, 1.0],
                 ),
               ),
               child: Column(
@@ -140,14 +315,21 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                   const SizedBox(height: 39),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.timer_outlined, size: 16, color: Color(0xFF8C8C8C)),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 16, color: Color(0xFF8C8C8C)),
+                      const SizedBox(width: 8),
                       Text(
-                        'OTP expires automatically in 10:00 minutes',
+                        _remainingSeconds > 0
+                            ? 'OTP expires in ${_formatTime(_remainingSeconds)}'
+                            : 'OTP expired',
                         style: TextStyle(
-                          color: Color(0xFF8C8C8C),
+                          color: _remainingSeconds > 0
+                              ? const Color(0xFF8C8C8C)
+                              : const Color(0xFFF5222D),
                           fontSize: 14,
+                          fontWeight: _remainingSeconds > 0
+                              ? FontWeight.w400
+                              : FontWeight.w600,
                         ),
                       ),
                     ],
@@ -164,9 +346,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () {
-                          // TODO: Implement Resend OTP logic
-                        },
+                        onPressed: _isSendingOtp ? null : _resendOtp,
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
                           minimumSize: Size.zero,
@@ -183,27 +363,73 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 48),
+                  if (_isSendingOtp)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(color: Color(0xFFF5222D)),
+                            SizedBox(height: 12),
+                            Text(
+                              'Sending OTP...',
+                              style: TextStyle(
+                                color: Color(0xFF8C8C8C),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(height: 48),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1F0),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFFCCC7)),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFFCF1322),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
                   SizedBox(
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: _verifyOtp,
+                      onPressed: (_isLoading || _isSendingOtp) ? null : _verifyOtp,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFF5222D),
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        elevation: 0,
-                      ),
-                      child: const Text(
-                        'Continue',
-                        style: TextStyle(
-                          color: Colors.white,
+                        textStyle: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text('Continue'),
                     ),
                   ),
                   const SizedBox(height: 32),
