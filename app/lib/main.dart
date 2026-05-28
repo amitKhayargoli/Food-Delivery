@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
+import 'core/services/supabase_client_service.dart';
 import 'providers/auth_provider.dart';
 import 'screens/auth/splash_screen.dart';
+import 'injection_container.dart' as di;
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseClientService.init();
+  await di.init();
   runApp(
     MultiProvider(
       providers: [
@@ -30,8 +35,7 @@ class MyApp extends StatelessWidget {
           seedColor: const Color(0xFFFF5733),
           primary: const Color(0xFFFF5733),
           secondary: const Color(0xFFFF6B4A),
-          background: const Color(0xFFFFFFFF),
-          surface: const Color(0xFFF7F8FA),
+          surface: const Color(0xFFFFFFFF),
         ),
         scaffoldBackgroundColor: const Color(0xFFFFFFFF),
         textTheme: const TextTheme(

@@ -9,3 +9,15 @@ design_plan.md
 AGENTS.md
 
 .worktrees/
+.env
+supabase/
+docs
+build
+dist/
+node_modules/
+*.log
+*.tmp
+.opencode
+.vscode
+graphify-out
+opencode.json

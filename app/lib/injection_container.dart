@@ -15,7 +15,7 @@ import 'features/auth/data/datasources/auth_local_data_source.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import 'core/services/supabase_client_service.dart';
-import 'core/config/supabase_config.dart';
+import 'core/services/api_service.dart';
 
 final sl = GetIt.instance;
 
@@ -28,6 +28,7 @@ Future<void> init() async {
     googleSignInUseCase: sl(),
     logoutUseCase: sl(),
     getCachedUserUseCase: sl(),
+    authRepository: sl(),
   ));
 
   // Use cases
@@ -44,13 +45,7 @@ Future<void> init() async {
   ));
 
   // Data sources
-  sl.registerLazySingleton<GoogleSignIn>(
-    () => GoogleSignIn(
-      scopes: const ['email', 'profile'],
-      serverClientId:
-          SupabaseConfig.googleWebClientId.isEmpty ? null : SupabaseConfig.googleWebClientId,
-    ),
-  );
+  sl.registerLazySingleton<GoogleSignIn>(() => GoogleSignIn.instance);
   sl.registerLazySingleton<AuthRemoteDataSource>(
     () => AuthRemoteDataSourceImpl(
       () => SupabaseClientService.client,
@@ -65,7 +60,9 @@ Future<void> init() async {
   );
 
   // Core
-  sl.registerLazySingleton(() => Dio(BaseOptions(baseUrl: 'http://localhost:5000/api')));
+  final dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.81:5000/api'));
+  sl.registerLazySingleton(() => dio);
+  sl.registerLazySingleton(() => ApiService(dio));
 
   // External
   final sharedPreferences = await SharedPreferences.getInstance();
