@@ -15,6 +15,7 @@ abstract class AuthRemoteDataSource {
   });
   Future<UserModel> signInWithGoogle();
   Future<void> logout();
+  Stream<UserModel?> get onAuthStateChanged;
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -206,12 +207,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     await _ensureConfigured();
 
     try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        throw const ServerFailure('Google sign-in was cancelled');
-      }
+      await _googleSignIn.initialize(
+        serverClientId: SupabaseConfig.googleWebClientId.isEmpty
+            ? null
+            : SupabaseConfig.googleWebClientId,
+      );
 
-      final googleAuth = await account.authentication;
+      final account = await _googleSignIn.authenticate();
+
+      final googleAuth = account.authentication;
       final idToken = googleAuth.idToken;
       if (idToken == null || idToken.isEmpty) {
         throw const ServerFailure('Missing Google ID token');
@@ -219,7 +223,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       final authResponse = await _exchangeGoogleToken(
         idToken: idToken,
-        accessToken: googleAuth.accessToken,
       );
 
       final user = authResponse.user;
@@ -262,5 +265,22 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<void> logout() async {
     await _ensureConfigured();
     await client.auth.signOut();
+  }
+
+  @override
+  Stream<UserModel?> get onAuthStateChanged {
+    return client.auth.onAuthStateChange.map((data) {
+      final session = data.session;
+      final user = session?.user;
+      if (user != null) {
+        return UserModel.fromSupabaseProfile(
+          authUserId: user.id,
+          authEmail: user.email ?? '',
+          accessToken: session?.accessToken,
+          profile: null,
+        );
+      }
+      return null;
+    });
   }
 }
