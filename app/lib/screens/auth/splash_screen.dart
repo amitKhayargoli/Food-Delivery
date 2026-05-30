@@ -46,21 +46,28 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
+      body: Stack(
+        children: [
+          // Centered logo
+          Center(
+            child: Image.asset(
               'assets/img/logo.png',
-              width: 200,
+              width: 280,
               fit: BoxFit.contain,
             ),
-            const SizedBox(height: 32),
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF5222D)),
+          ),
+          // Loading spinner at the bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 48,
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF5222D)),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
