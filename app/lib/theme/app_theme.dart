@@ -4,8 +4,8 @@ class AppTheme {
   AppTheme._();
 
   // Colors
-  static const Color primaryCoral = Color(0xFFFF5A36);
-  static const Color lightPeach = Color(0xFFFFF0ED);
+  static const Color primaryRed = Color(0xFFF5222D);
+  static const Color lightRedBg = Color(0xFFFFF0F0);
   static const Color pureWhite = Color(0xFFFFFFFF);
   static const Color surfaceGray = Color(0xFFF8F9FA);
   
@@ -32,11 +32,11 @@ class AppTheme {
 
   static ThemeData get lightTheme {
     return ThemeData(
-      primaryColor: primaryCoral,
+      primaryColor: primaryRed,
       scaffoldBackgroundColor: pureWhite,
       colorScheme: const ColorScheme.light(
-        primary: primaryCoral,
-        secondary: lightPeach,
+        primary: primaryRed,
+        secondary: lightRedBg,
         surface: pureWhite,
         error: Colors.red,
         onPrimary: pureWhite,
@@ -49,7 +49,7 @@ class AppTheme {
       // Component Themes
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryCoral,
+          backgroundColor: primaryRed,
           foregroundColor: pureWhite,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)), // Pill-shaped
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
@@ -73,7 +73,7 @@ class AppTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: pureWhite,
-        selectedItemColor: primaryCoral,
+        selectedItemColor: primaryRed,
         unselectedItemColor: textSecondary,
       ),
     );
