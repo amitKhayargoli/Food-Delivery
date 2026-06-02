@@ -32,7 +32,6 @@ class _OtpScreenState extends State<OtpScreen> {
   bool _isLoading = false;
   bool _isSendingOtp = true;
   String? _errorMessage;
-  String? _expiresAt;
   int _remainingSeconds = 600; // 10 minutes default
 
   @override
@@ -95,7 +94,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
       setState(() {
         _isSendingOtp = false;
-        _expiresAt = response.expiresAt;
         _remainingSeconds = 600;
       });
       _startCountdown();
@@ -173,7 +171,7 @@ class _OtpScreenState extends State<OtpScreen> {
     });
 
     try {
-      final response = await _apiService.resendOtp(
+      await _apiService.resendOtp(
         phone: widget.phone,
         purpose: widget.purpose,
       );
@@ -182,7 +180,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
       setState(() {
         _isSendingOtp = false;
-        _expiresAt = response.expiresAt;
         _remainingSeconds = 600;
       });
       _startCountdown();

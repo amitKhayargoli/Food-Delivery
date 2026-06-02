@@ -109,7 +109,7 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
                       ),
                       Switch(
                         value: food.isAvailable,
-                        activeColor: theme.colorScheme.primary,
+                        activeThumbColor: theme.colorScheme.primary,
                         onChanged: (val) {
                           // Handle stock toggle
                         },

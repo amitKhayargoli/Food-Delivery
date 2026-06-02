@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../screens/user/home_screen.dart';
+import '../screens/user/search_screen.dart';
 import '../screens/user/cart_screen.dart';
+import '../screens/user/profile_screen.dart';
 import '../screens/owner/owner_dashboard_screen.dart';
 import '../screens/owner/owner_menu_screen.dart';
 import '../screens/owner/owner_analytics_screen.dart';
@@ -22,10 +24,10 @@ class _AppNavigationState extends State<AppNavigation> {
 
   List<Widget> get _userScreens => [
     const UserHomeScreen(),
-    const Center(child: Text('Search')),
+    const SearchScreen(),
     const Center(child: Text('Your Orders')),
     const CartScreen(),
-    const Center(child: Text('Profile')),
+    const ProfileScreen(),
   ];
 
   List<Widget> get _adminScreens => [
