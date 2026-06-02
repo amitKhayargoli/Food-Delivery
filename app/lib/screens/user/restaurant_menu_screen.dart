@@ -16,78 +16,85 @@ class RestaurantMenuScreen extends ConsumerStatefulWidget {
 }
 
 class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
-  // Tracks quantity per food item (0 = not in cart, not shown)
-  final Map<String, int> _quantities = {};
-
-  @override
-  void initState() {
-    super.initState();
-    for (final food in widget.restaurant.foods) {
-      _quantities[food.id] = 0;
-    }
+  // ── Derived from CartProvider (shared state) ──
+  // Returns cart items belonging to this restaurant
+  Iterable<CartItem> get _restaurantCartItems {
+    final cart = ref.read(cartStateProvider);
+    return cart.items.values
+        .where((item) => item.restaurantId == widget.restaurant.id);
   }
 
-  int get _totalItems => _quantities.values.fold(0, (sum, q) => sum + q);
+  int get _totalItems =>
+      _restaurantCartItems.fold(0, (sum, item) => sum + item.quantity);
 
-  double get _totalPrice {
-    double total = 0;
-    for (final food in widget.restaurant.foods) {
-      final qty = _quantities[food.id] ?? 0;
-      if (qty > 0) total += food.price * qty;
-    }
-    return total;
+  double get _totalPrice =>
+      _restaurantCartItems.fold(0.0, (sum, item) => sum + item.price * item.quantity);
+
+  // Returns total quantity for a specific food (sums across menu + customized items)
+  int _quantityForFood(String foodId) {
+    return _restaurantCartItems
+        .where((item) => item.foodId == foodId)
+        .fold(0, (sum, item) => sum + item.quantity);
   }
+
+  // The menu uses a simple key '${foodId}_' for its own quick-add items
+  String _menuItemKey(String foodId) => '${foodId}_';
 
   void _increment(Food food) {
-    setState(() {
-      _quantities[food.id] = (_quantities[food.id] ?? 0) + 1;
-    });
-    _syncToCart(food);
+    final cart = ref.read(cartStateProvider);
+    final key = _menuItemKey(food.id);
+    if (cart.items.containsKey(key)) {
+      cart.updateQuantity(key, cart.items[key]!.quantity + 1);
+    } else {
+      cart.addItem(CartItem(
+        id: key,
+        foodId: food.id,
+        name: food.name,
+        price: food.price,
+        restaurantId: widget.restaurant.id,
+        restaurantName: widget.restaurant.name,
+        imageUrl: food.imageUrl,
+        quantity: 1,
+      ));
+    }
   }
 
   void _decrement(Food food) {
-    final current = _quantities[food.id] ?? 0;
-    if (current <= 0) return;
-    setState(() {
-      _quantities[food.id] = current - 1;
-    });
-    _syncToCart(food);
+    final cart = ref.read(cartStateProvider);
+    final key = _menuItemKey(food.id);
+    if (!cart.items.containsKey(key)) return;
+    final current = cart.items[key]!.quantity;
+    if (current <= 1) {
+      cart.removeItem(key);
+    } else {
+      cart.updateQuantity(key, current - 1);
+    }
   }
 
   void _addToCart(Food food) {
-    setState(() {
-      _quantities[food.id] = 1;
-    });
-    _syncToCart(food);
-  }
-
-  void _syncToCart(Food food) {
-    final qty = _quantities[food.id] ?? 0;
     final cart = ref.read(cartStateProvider);
-    final itemKey = '${food.id}_';
-
-    if (qty > 0) {
-      if (cart.items.containsKey(itemKey)) {
-        cart.updateQuantity(itemKey, qty);
-      } else {
-        cart.addItem(CartItem(
-          id: itemKey,
-          foodId: food.id,
-          name: food.name,
-          price: food.price,
-          restaurantId: widget.restaurant.id,
-          restaurantName: widget.restaurant.name,
-          imageUrl: food.imageUrl,
-          quantity: qty,
-        ));
-      }
+    final key = _menuItemKey(food.id);
+    if (cart.items.containsKey(key)) {
+      cart.updateQuantity(key, cart.items[key]!.quantity + 1);
     } else {
-      cart.removeItem(itemKey);
+      cart.addItem(CartItem(
+        id: key,
+        foodId: food.id,
+        name: food.name,
+        price: food.price,
+        restaurantId: widget.restaurant.id,
+        restaurantName: widget.restaurant.name,
+        imageUrl: food.imageUrl,
+        quantity: 1,
+      ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Watch the cart so the UI reactively updates on add/remove/quantity changes
+    ref.watch(cartStateProvider);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
@@ -193,10 +200,24 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
                 color: Colors.white.withValues(alpha: 0.90),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.favorite_border,
-                size: 18,
-                color: Color(0xFF595959),
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final isFav = ref.watch(favoritesProvider)
+                      .isRestaurantFavorite(widget.restaurant.id);
+                  return GestureDetector(
+                    onTap: () {
+                      ref.read(favoritesProvider.notifier)
+                          .toggleRestaurant(widget.restaurant.id);
+                    },
+                    child: Icon(
+                      isFav ? Icons.favorite : Icons.favorite_border,
+                      size: 18,
+                      color: isFav
+                          ? const Color(0xFFF5222D)
+                          : const Color(0xFF595959),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -384,7 +405,7 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
   // ──────────────────────────────────────────────
 
   Widget _buildFoodItem(Food food) {
-    final qty = _quantities[food.id] ?? 0;
+    final qty = _quantityForFood(food.id);
 
     return GestureDetector(
       onTap: () {
