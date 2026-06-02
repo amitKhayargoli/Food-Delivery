@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/mock_data.dart';
 import '../../models/models.dart';
+import '../../state_providers.dart';
 import 'restaurant_menu_screen.dart';
 import 'delivery_address_map_screen.dart';
 import 'selected_delivery_location.dart';
@@ -113,12 +115,12 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF0F0),
+                color: const Color(0xFFF5222D),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
                 Icons.location_on_outlined,
-                color: Color(0xFFF5222D),
+                color: Colors.white,
                 size: 22,
               ),
             ),
@@ -401,11 +403,25 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.favorite_border,
-                      size: 16,
-                      color: Color(0xFF595959),
-                    ),
+                    child: Consumer(
+                        builder: (context, ref, _) {
+                          final isFav = ref.watch(favoritesProvider)
+                              .isRestaurantFavorite(restaurant.id);
+                          return GestureDetector(
+                            onTap: () {
+                              ref.read(favoritesProvider.notifier)
+                                  .toggleRestaurant(restaurant.id);
+                            },
+                            child: Icon(
+                              isFav ? Icons.favorite : Icons.favorite_border,
+                              size: 16,
+                              color: isFav
+                                  ? const Color(0xFFF5222D)
+                                  : const Color(0xFF595959),
+                            ),
+                          );
+                        },
+                      ),
                   ),
                 ),
               ],

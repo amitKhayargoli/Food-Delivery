@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/models.dart';
 import '../../cart_provider.dart';
 import '../../state_providers.dart';
+import '../../data/mock_data.dart';
 
 class FoodDetailsScreen extends ConsumerStatefulWidget {
   final Food food;
@@ -22,39 +23,39 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // ── Size options (from Figma design) ──
-  static const List<_SizeOption> _sizes = [
-    _SizeOption(name: 'Small', weight: '250g', price: 399.0),
-    _SizeOption(name: 'Medium', weight: '350g', price: 649.0, isPopular: true),
-    _SizeOption(name: 'Large', weight: '500g', price: 999.0),
-  ];
-  int _selectedSize = 1; // Medium (Most Popular)
+  /// Whether this food item has size selection (e.g., pizza).
+  bool get _hasSizes => widget.food.sizes.isNotEmpty;
 
-  // ── Add-on options (from Figma design) ──
-  static const List<_AddOn> _addOns = [
-    _AddOn(name: 'Double Cheese', price: 40.0,
-        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🧀'),
-    _AddOn(name: 'Double Chicken', price: 60.0,
-        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🍗'),
-    _AddOn(name: 'Extra Jalapenos', price: 20.0,
-        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🌶'),
-    _AddOn(name: 'Bacon Strips', price: 50.0,
-        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥓'),
-    _AddOn(name: 'Extra Sauce', price: 10.0,
-        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥫'),
-  ];
+  /// The add-on set for this food's category, or null if none defined.
+  AddOnSet? get _addOnSet {
+    final sets = mockAddOnSets.where(
+      (set) => set.categoryId == widget.food.categoryId,
+    );
+    return sets.isNotEmpty ? sets.first : null;
+  }
+
+  /// Selected size index (only relevant when [_hasSizes] is true).
+  /// Defaults to the popular size, or the first size.
+  int _selectedSize = 0;
+
+  /// Selected add-on indices within the current add-on set.
   final Set<int> _selectedAddOns = {};
 
   int _quantity = 1;
   final TextEditingController _instructionsController = TextEditingController();
 
-  _SizeOption get _selectedSizeOption => _sizes[_selectedSize];
+  FoodSize get _selectedFoodSize => widget.food.sizes[_selectedSize];
+
   double get _addOnPrice =>
-      _selectedAddOns.fold(0.0, (sum, i) => sum + _addOns[i].price);
-  double get _itemPrice => _selectedSizeOption.price + _addOnPrice;
+      _selectedAddOns.fold(0.0, (sum, i) => sum + (_addOnSet?.addOns[i].price ?? 0));
+
+  double get _basePrice => _hasSizes ? _selectedFoodSize.price : widget.food.price;
+
+  double get _itemPrice => _basePrice + _addOnPrice;
+
   double get _totalPrice => _itemPrice * _quantity;
 
-  // Carousel images — main food image + placeholders for additional angles
+  // Carousel images — main food image + placeholder angles
   List<String> get _images => [
         widget.food.imageUrl,
         'https://placehold.co/402x380/FFF1F0/F5222D?text=Angle+2',
@@ -65,6 +66,11 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    // Default to popular size or first size
+    if (_hasSizes) {
+      final popularIndex = widget.food.sizes.indexWhere((s) => s.isPopular);
+      _selectedSize = popularIndex >= 0 ? popularIndex : 0;
+    }
     _pageController.addListener(() {
       final page = _pageController.page?.round() ?? 0;
       if (page != _currentPage) {
@@ -82,27 +88,49 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
 
   void _addToCart() {
     final instructions = _instructionsController.text.trim();
-    final addOnNames = _selectedAddOns.map((i) => _addOns[i].name).join(', ');
+    final addOnNames =
+        _selectedAddOns.map((i) => _addOnSet?.addOns[i].name ?? '').join(', ');
 
+    final sizePart = _hasSizes ? '$_selectedSize' : 'x';
     final cartItem = CartItem(
-      id: '${widget.food.id}_${_selectedSize}_${_selectedAddOns.join('|')}',
+      id: '${widget.food.id}_${sizePart}_${_selectedAddOns.join('|')}',
       foodId: widget.food.id,
-      name: '${widget.food.name} (${_selectedSizeOption.name})',
+      name: _hasSizes
+          ? '${widget.food.name} (${_selectedFoodSize.name})'
+          : widget.food.name,
       price: _itemPrice,
       restaurantId: widget.restaurant.id,
       restaurantName: widget.restaurant.name,
       imageUrl: widget.food.imageUrl,
       specialInstructions: [
+        if (_hasSizes) 'Size: ${_selectedFoodSize.name}',
         if (addOnNames.isNotEmpty) 'Add-ons: $addOnNames',
         if (instructions.isNotEmpty) instructions,
       ].join(' | '),
       quantity: _quantity,
     );
 
-    ref.read(cartStateProvider).addItem(cartItem);
+    final cart = ref.read(cartStateProvider);
+    cart.addItem(cartItem);
 
-    // Defer pop to avoid bottomSheet element tree assertion error on pop
-    Future.microtask(() {
+    // Show a quick confirmation then pop back
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${cartItem.name} added to cart'),
+          backgroundColor: const Color(0xFF52C41A),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+          duration: const Duration(milliseconds: 1200),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
+
+    // Pop back after a brief delay so user sees the confirmation
+    Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) Navigator.maybePop(context);
     });
   }
@@ -124,8 +152,8 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
                 children: [
                   _buildFoodInfo(),
                   _buildDescription(),
-                  _buildChooseSize(),
-                  _buildCustomizeSection(),
+                  if (_hasSizes) _buildChooseSize(),
+                  if (_addOnSet != null) _buildCustomizeSection(),
                   _buildSpecialInstructions(),
                   const SizedBox(height: 16),
                 ],
@@ -223,10 +251,24 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
                 color: Colors.white.withValues(alpha: 0.90),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.favorite_border,
-                size: 18,
-                color: Color(0xFF333333),
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final isFav = ref.watch(favoritesProvider)
+                      .isFoodFavorite(widget.food.id);
+                  return GestureDetector(
+                    onTap: () {
+                      ref.read(favoritesProvider.notifier)
+                          .toggleFood(widget.food.id);
+                    },
+                    child: Icon(
+                      isFav ? Icons.favorite : Icons.favorite_border,
+                      size: 18,
+                      color: isFav
+                          ? const Color(0xFFF5222D)
+                          : const Color(0xFF333333),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -372,10 +414,11 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   }
 
   // ══════════════════════════════════════════════
-  // 4. Choose Size
+  // 4. Choose Size (only shown when food has sizes)
   // ══════════════════════════════════════════════
 
   Widget _buildChooseSize() {
+    final sizes = widget.food.sizes;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
@@ -392,9 +435,9 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          ...List.generate(_sizes.length, (i) {
+          ...List.generate(sizes.length, (i) {
             return Padding(
-              padding: EdgeInsets.only(bottom: i < _sizes.length - 1 ? 8 : 0),
+              padding: EdgeInsets.only(bottom: i < sizes.length - 1 ? 8 : 0),
               child: _buildSizeCard(i),
             );
           }),
@@ -404,7 +447,7 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   }
 
   Widget _buildSizeCard(int index) {
-    final size = _sizes[index];
+    final size = widget.food.sizes[index];
     final selected = index == _selectedSize;
     return GestureDetector(
       onTap: () => setState(() => _selectedSize = index),
@@ -522,10 +565,11 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   }
 
   // ══════════════════════════════════════════════
-  // 5. Customize Your Order
+  // 5. Customize Your Order (only shown when add-on set exists)
   // ══════════════════════════════════════════════
 
   Widget _buildCustomizeSection() {
+    final addOns = _addOnSet!.addOns;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
@@ -552,9 +596,9 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
             ),
           ),
           const SizedBox(height: 9),
-          ...List.generate(_addOns.length, (i) {
+          ...List.generate(addOns.length, (i) {
             return Padding(
-              padding: EdgeInsets.only(bottom: i < _addOns.length - 1 ? 12 : 0),
+              padding: EdgeInsets.only(bottom: i < addOns.length - 1 ? 12 : 0),
               child: _buildAddOnCard(i),
             );
           }),
@@ -564,7 +608,7 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
   }
 
   Widget _buildAddOnCard(int index) {
-    final addOn = _addOns[index];
+    final addOn = _addOnSet!.addOns[index];
     final selected = _selectedAddOns.contains(index);
     return GestureDetector(
       onTap: () {
@@ -872,32 +916,4 @@ class _FoodDetailsScreenState extends ConsumerState<FoodDetailsScreen> {
       ),
     );
   }
-}
-
-// ── Private helper models ──
-
-class _SizeOption {
-  final String name;
-  final String weight;
-  final double price;
-  final bool isPopular;
-
-  const _SizeOption({
-    required this.name,
-    required this.weight,
-    required this.price,
-    this.isPopular = false,
-  });
-}
-
-class _AddOn {
-  final String name;
-  final double price;
-  final String imageUrl;
-
-  const _AddOn({
-    required this.name,
-    required this.price,
-    required this.imageUrl,
-  });
 }
