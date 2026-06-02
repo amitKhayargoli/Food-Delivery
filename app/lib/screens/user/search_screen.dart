@@ -400,12 +400,12 @@ class _SearchScreenState extends State<SearchScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF0F0),
+                color: const Color(0xFFF5222D),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
                 Icons.location_on_outlined,
-                color: Color(0xFFF5222D),
+                color: Colors.white,
                 size: 22,
               ),
             ),

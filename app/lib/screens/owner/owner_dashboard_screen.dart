@@ -23,7 +23,7 @@ class OwnerDashboardScreen extends StatelessWidget {
                 ),
                 Switch(
                   value: true,
-                  activeColor: theme.colorScheme.primary,
+                  activeThumbColor: theme.colorScheme.primary,
                   onChanged: (val) {},
                 ),
               ],
@@ -176,7 +176,7 @@ class OwnerDashboardScreen extends StatelessWidget {
               Text(
                 time,
                 style: const TextStyle(
-                  color: Color(0xFFFF5733),
+                  color: Color(0xFFF5222D),
                   fontWeight: FontWeight.w600,
                 ),
               ),
