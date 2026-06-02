@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:baato_maps/baato_maps.dart';
 import 'cart_provider.dart';
+import 'core/config/supabase_config.dart';
 import 'core/services/supabase_client_service.dart';
 import 'providers/auth_provider.dart';
 import 'screens/auth/splash_screen.dart';
@@ -11,6 +14,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseClientService.init();
   await di.init();
+
+  // Initialize Baato Maps with API key
+  if (SupabaseConfig.isBaatoConfigured) {
+    Baato.configure(
+      apiKey: SupabaseConfig.baatoApiKey,
+      enableLogging: true,
+    );
+  }
+
   runApp(
     const ProviderScope(
       child: MyAppWithProviders(),
@@ -27,7 +39,7 @@ class MyAppWithProviders extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => CartProvider(di.sl<SharedPreferences>())),
       ],
       child: const MyApp(),
     );
@@ -40,7 +52,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Rasoi Food Delivery',
+      title: 'Dailo Food Delivery',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'SF Pro Display',

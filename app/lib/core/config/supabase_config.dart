@@ -14,6 +14,11 @@ class SupabaseConfig {
     defaultValue: '',
   );
 
+  static const String baatoApiKey = String.fromEnvironment(
+    'BAATO_API_KEY',
+    defaultValue: '',
+  );
+
   static const String authRedirectScheme = 'rasoi';
   static const String authRedirectHost = 'login-callback';
 
@@ -21,4 +26,6 @@ class SupabaseConfig {
       '$authRedirectScheme://$authRedirectHost';
 
   static bool get isConfigured => url.isNotEmpty && anonKey.isNotEmpty;
+
+  static bool get isBaatoConfigured => baatoApiKey.isNotEmpty;
 }
