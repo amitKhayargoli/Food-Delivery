@@ -16,6 +16,7 @@ import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import 'core/services/supabase_client_service.dart';
 import 'core/services/api_service.dart';
+import 'core/services/storage_service.dart';
 
 final sl = GetIt.instance;
 
@@ -63,6 +64,7 @@ Future<void> init() async {
   final dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.81:5000/api'));
   sl.registerLazySingleton(() => dio);
   sl.registerLazySingleton(() => ApiService(dio));
+  sl.registerLazySingleton(() => StorageService(dio));
 
   // External
   final sharedPreferences = await SharedPreferences.getInstance();
