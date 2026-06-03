@@ -1,9 +1,9 @@
 import '../models/models.dart';
 
 final List<Category> mockCategories = [
-  Category(id: 'c1', name: 'Burger', imageUrl: '🍔'),
-  Category(id: 'c2', name: 'Pizza', imageUrl: '🍕'),
-  Category(id: 'c3', name: 'Momo', imageUrl: '🥟'),
+  Category(id: 'c1', name: 'Burger', imageUrl: '🍔', hasSizeSelection: true),
+  Category(id: 'c2', name: 'Pizza', imageUrl: '🍕', hasSizeSelection: true),
+  Category(id: 'c3', name: 'Momo', imageUrl: '🥟', hasSizeSelection: true),
   Category(id: 'c4', name: 'Sushi', imageUrl: '🍣'),
   Category(id: 'c5', name: 'Dessert', imageUrl: '🍰'),
 ];
@@ -26,6 +26,11 @@ final List<Restaurant> mockRestaurants = [
         price: 350.0,
         imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c1',
+        sizes: [
+          FoodSize(name: 'Single', weight: '1 patty (200g)', price: 350.0),
+          FoodSize(name: 'Double', weight: '2 patties (350g)', price: 450.0, isPopular: true),
+          FoodSize(name: 'Triple', weight: '3 patties (500g)', price: 550.0),
+        ],
       ),
       Food(
         id: 'f2',
@@ -35,6 +40,11 @@ final List<Restaurant> mockRestaurants = [
         price: 320.0,
         imageUrl: 'https://images.unsplash.com/photo-1525648199074-cee30ba79a4a?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c1',
+        sizes: [
+          FoodSize(name: 'Single', weight: '1 patty (200g)', price: 320.0),
+          FoodSize(name: 'Double', weight: '2 patties (350g)', price: 420.0, isPopular: true),
+          FoodSize(name: 'Triple', weight: '3 patties (500g)', price: 520.0),
+        ],
       ),
     ],
   ),
@@ -55,6 +65,11 @@ final List<Restaurant> mockRestaurants = [
         price: 650.0,
         imageUrl: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c2',
+        sizes: [
+          FoodSize(name: 'Small', weight: '250g', price: 399.0),
+          FoodSize(name: 'Medium', weight: '350g', price: 650.0, isPopular: true),
+          FoodSize(name: 'Large', weight: '500g', price: 999.0),
+        ],
       ),
       Food(
         id: 'f4',
@@ -64,6 +79,11 @@ final List<Restaurant> mockRestaurants = [
         price: 750.0,
         imageUrl: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c2',
+        sizes: [
+          FoodSize(name: 'Small', weight: '250g', price: 499.0),
+          FoodSize(name: 'Medium', weight: '350g', price: 750.0, isPopular: true),
+          FoodSize(name: 'Large', weight: '500g', price: 1099.0),
+        ],
       ),
     ],
   ),
@@ -84,6 +104,11 @@ final List<Restaurant> mockRestaurants = [
         price: 150.0,
         imageUrl: 'https://images.unsplash.com/photo-1626804475297-4160ebea14ee?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c3',
+        sizes: [
+          FoodSize(name: 'Half', weight: '6 pcs (300g)', price: 100.0),
+          FoodSize(name: 'Full', weight: '10 pcs (500g)', price: 150.0, isPopular: true),
+          FoodSize(name: 'Jumbo', weight: '15 pcs (750g)', price: 230.0),
+        ],
       ),
       Food(
         id: 'f6',
@@ -93,6 +118,97 @@ final List<Restaurant> mockRestaurants = [
         price: 180.0,
         imageUrl: 'https://images.unsplash.com/photo-1630175860333-514210f92271?auto=format&fit=crop&w=400&q=80',
         categoryId: 'c3',
+        sizes: [
+          FoodSize(name: 'Half', weight: '6 pcs (300g)', price: 120.0),
+          FoodSize(name: 'Full', weight: '10 pcs (500g)', price: 180.0, isPopular: true),
+          FoodSize(name: 'Jumbo', weight: '15 pcs (750g)', price: 260.0),
+        ],
+      ),
+    ],
+  ),
+];
+
+final List<AddOnSet> mockAddOnSets = [
+  AddOnSet(
+    id: 'aos_pizza',
+    categoryId: 'c2',
+    addOns: [
+      const AddOn(
+        name: 'Double Cheese',
+        price: 40.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🧀',
+      ),
+      const AddOn(
+        name: 'Double Chicken',
+        price: 60.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🍗',
+      ),
+      const AddOn(
+        name: 'Extra Jalapenos',
+        price: 20.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🌶',
+      ),
+      const AddOn(
+        name: 'Bacon Strips',
+        price: 50.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥓',
+      ),
+      const AddOn(
+        name: 'Extra Sauce',
+        price: 10.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥫',
+      ),
+    ],
+  ),
+  AddOnSet(
+    id: 'aos_burger',
+    categoryId: 'c1',
+    addOns: [
+      const AddOn(
+        name: 'Extra Patty',
+        price: 80.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🍔',
+      ),
+      const AddOn(
+        name: 'Bacon Strips',
+        price: 50.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥓',
+      ),
+      const AddOn(
+        name: 'Extra Cheese',
+        price: 30.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🧀',
+      ),
+      const AddOn(
+        name: 'Jalapenos',
+        price: 20.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🌶',
+      ),
+      const AddOn(
+        name: 'Special Sauce',
+        price: 15.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥫',
+      ),
+    ],
+  ),
+  AddOnSet(
+    id: 'aos_momo',
+    categoryId: 'c3',
+    addOns: [
+      const AddOn(
+        name: 'Extra Achar',
+        price: 15.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥣',
+      ),
+      const AddOn(
+        name: 'Extra Mayo',
+        price: 10.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🥛',
+      ),
+      const AddOn(
+        name: 'Spicy Dip',
+        price: 20.0,
+        imageUrl: 'https://placehold.co/40x40/FFF1F0/F5222D?text=🌶',
       ),
     ],
   ),
