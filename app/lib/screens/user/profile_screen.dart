@@ -4,21 +4,25 @@ import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
 import 'restaurant_menu_screen.dart';
-import 'food_details_screen.dart';
+import '../owner/restaurant_application_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authViewModel = ref.watch(authViewModelProvider);
     final favorites = ref.watch(favoritesProvider);
+
+    // Show favorited restaurants, or first 3 mock restaurants as default
     final favoriteRestaurants = mockRestaurants
         .where((r) => favorites.favoriteRestaurantIds.contains(r.id))
         .toList();
-    final favoriteFoods = mockRestaurants
-        .expand((r) => r.foods)
-        .where((f) => favorites.favoriteFoodIds.contains(f.id))
-        .toList();
+    final displayRestaurants =
+        favoriteRestaurants.isNotEmpty ? favoriteRestaurants : mockRestaurants.take(3).toList();
+
+    final userName = authViewModel.currentUser?.username ?? 'Amit Khayargoli';
+    final userEmail = authViewModel.currentUser?.email ?? 'khayargoliamit99@gmail.com';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -27,8 +31,16 @@ class ProfileScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildProfileHeader(),
-              _buildFavoritesSection(context, ref, favoriteRestaurants, favoriteFoods),
+              // App Bar
+              _buildAppBar(context),
+              // Profile Header
+              _buildProfileHeader(context, userName, userEmail),
+              // Favorite Restaurants
+              _buildFavoriteRestaurantsSection(context, ref, displayRestaurants),
+              // Business & Partnerships
+              _buildBusinessSection(context),
+              // Logout Button
+              _buildLogoutButton(context, ref),
               const SizedBox(height: 32),
             ],
           ),
@@ -38,77 +50,60 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   // ──────────────────────────────────────────────
-  // Profile Header
+  // App Bar
   // ──────────────────────────────────────────────
 
-  Widget _buildProfileHeader() {
+  Widget _buildAppBar(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-      decoration: const BoxDecoration(
+      decoration: ShapeDecoration(
         color: Colors.white,
-        boxShadow: [
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+        ),
+        shadows: const [
           BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+            color: Color(0x0C000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+            spreadRadius: 0,
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1F0),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.person_outline,
-              size: 32,
-              color: Color(0xFFF5222D),
-            ),
-          ),
-          const SizedBox(width: 16),
-          // User info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Food Lover',
-                  style: TextStyle(
-                    color: Color(0xFF1A1A1A),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Container(
+              width: double.infinity,
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Profile',
+                    style: TextStyle(
+                      color: Color(0xFF1A1C1C),
+                      fontSize: 18,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '+977-98XXXXXXXX',
-                  style: TextStyle(
-                    color: Color(0xFF999999),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.settings_outlined, color: Color(0xFF8C8C8C)),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
-                ),
-              ],
-            ),
-          ),
-          // Edit button
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.edit_outlined,
-              size: 18,
-              color: Color(0xFF666666),
+                ],
+              ),
             ),
           ),
         ],
@@ -117,255 +112,462 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   // ──────────────────────────────────────────────
-  // Favorites Section
+  // Profile Header — Avatar + Name + Email
   // ──────────────────────────────────────────────
 
-  Widget _buildFavoritesSection(
+  Widget _buildProfileHeader(BuildContext context, String userName, String userEmail) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(top: 24, left: 16, right: 16, bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Avatar with edit overlay
+          SizedBox(
+            width: 96,
+            height: 96,
+            child: Stack(
+              children: [
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: ShapeDecoration(
+                    color: Colors.white.withValues(alpha: 0),
+                    shape: RoundedRectangleBorder(
+                      side: const BorderSide(
+                        width: 4,
+                        color: Color(0x19BB0018),
+                      ),
+                      borderRadius: BorderRadius.circular(9999),
+                    ),
+                    shadows: const [
+                      BoxShadow(
+                        color: Color(0x19000000),
+                        blurRadius: 6,
+                        offset: Offset(0, 4),
+                        spreadRadius: -4,
+                      ),
+                      BoxShadow(
+                        color: Color(0x19000000),
+                        blurRadius: 15,
+                        offset: Offset(0, 10),
+                        spreadRadius: -3,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9999),
+                    child: Image.network(
+                      'https://placehold.co/88x88',
+                      width: 88,
+                      height: 88,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: const Color(0xFFFFF1F0),
+                        child: const Icon(
+                          Icons.person,
+                          size: 44,
+                          color: Color(0xFFF5222D),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Camera/edit icon overlay
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFF5222D),
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(
+                          width: 2,
+                          color: Color(0xFFFAF9F9),
+                        ),
+                        borderRadius: BorderRadius.circular(9999),
+                      ),
+                    ),
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0),
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x19000000),
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                            spreadRadius: -2,
+                          ),
+                          BoxShadow(
+                            color: Color(0x19000000),
+                            blurRadius: 6,
+                            offset: Offset(0, 4),
+                            spreadRadius: -1,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.camera_alt, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Name
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              userName,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF1A1C1C),
+                fontSize: 24,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w700,
+                height: 1.33,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          // Email
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              userEmail,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF262626),
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+                height: 1.43,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Favorite Restaurants Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildFavoriteRestaurantsSection(
     BuildContext context,
     WidgetRef ref,
-    List<Restaurant> favoriteRestaurants,
-    List<Food> favoriteFoods,
+    List<Restaurant> restaurants,
   ) {
-    if (favoriteRestaurants.isEmpty && favoriteFoods.isEmpty) {
-      return _buildEmptyFavorites();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        // Section header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.favorite, size: 18, color: Color(0xFFF5222D)),
-              const SizedBox(width: 8),
-              Text(
-                'My Favorites',
-                style: const TextStyle(
-                  color: Color(0xFF1A1A1A),
+              const Text(
+                'Favorite Restaurants',
+                style: TextStyle(
+                  color: Color(0xFF1A1C1C),
                   fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w700,
+                  height: 1.33,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('View all favorites')),
+                  );
+                },
+                child: const Text(
+                  'View All',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFF5222D),
+                    fontSize: 14,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Restaurant Cards
+          ...restaurants.map(
+            (restaurant) => _buildRestaurantCard(context, ref, restaurant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestaurantCard(BuildContext context, WidgetRef ref, Restaurant restaurant) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RestaurantMenuScreen(restaurant: restaurant),
+            ),
+          );
+        },
+        child: Container(
+          width: double.infinity,
+          height: 90,
+          padding: const EdgeInsets.all(12),
+          decoration: ShapeDecoration(
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            shadows: const [
+              BoxShadow(
+                color: Color(0x0C000000),
+                blurRadius: 2,
+                offset: Offset(0, 1),
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Restaurant image
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  restaurant.bannerUrl,
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.restaurant, color: Color(0xFFBFBFBF), size: 28),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Info
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      restaurant.name,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1C1C),
+                        fontSize: 16,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${restaurant.rating} (120+) • ${restaurant.deliveryTimeMinutes} mins',
+                      style: const TextStyle(
+                        color: Color(0xFFE71225),
+                        fontSize: 12,
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w400,
+                        height: 1.33,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Favorite toggle
+              GestureDetector(
+                onTap: () {
+                  ref.read(favoritesProvider.notifier).toggleRestaurant(restaurant.id);
+                },
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: ref
+                            .read(favoritesProvider)
+                            .isRestaurantFavorite(restaurant.id)
+                        ? const Color(0xFFFFF1F0)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    ref.read(favoritesProvider).isRestaurantFavorite(restaurant.id)
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    size: 18,
+                    color: ref.read(favoritesProvider).isRestaurantFavorite(restaurant.id)
+                        ? const Color(0xFFF5222D)
+                        : const Color(0xFF8C8C8C),
+                  ),
                 ),
               ),
             ],
           ),
         ),
-
-        // Favorite Restaurants
-        if (favoriteRestaurants.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Restaurants (${favoriteRestaurants.length})',
-              style: const TextStyle(
-                color: Color(0xFF666666),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          SizedBox(
-            height: 200,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: favoriteRestaurants.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) =>
-                  _buildFavoriteRestaurantCard(context, ref, favoriteRestaurants[index]),
-            ),
-          ),
-        ],
-
-        // Favorite Foods
-        if (favoriteFoods.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: Text(
-              'Food Items (${favoriteFoods.length})',
-              style: const TextStyle(
-                color: Color(0xFF666666),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: favoriteFoods.map((food) {
-                final restaurant = mockRestaurants.firstWhere(
-                  (r) => r.foods.any((f) => f.id == food.id),
-                  orElse: () => mockRestaurants.first,
-                );
-                return _buildFavoriteFoodItem(context, ref, food, restaurant);
-              }).toList(),
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
   // ──────────────────────────────────────────────
-  // Empty Favorites State
+  // Business & Partnerships Section
   // ──────────────────────────────────────────────
 
-  Widget _buildEmptyFavorites() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 60),
+  Widget _buildBusinessSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.favorite_border,
-            size: 64,
-            color: Colors.grey.shade300,
-          ),
-          const SizedBox(height: 16),
           const Text(
-            'No favorites yet',
+            'Business & Partnerships',
             style: TextStyle(
-              color: Color(0xFF999999),
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
+              color: Color(0xFF1A1C1C),
+              fontSize: 18,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w700,
+              height: 1.33,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Tap the heart icon on restaurants\nand food items to save them here',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Color(0xFFBFBFBF),
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-            ),
+          // Register as Restaurant Owner
+          _buildBusinessCard(
+            context,
+            icon: Icons.store_outlined,
+            title: 'Register as Restaurant Owner',
+            subtitle: 'List your store and reach more customers',
+            onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const RestaurantApplicationScreen(),
+              ),
+            );
+          },
+          ),
+          const SizedBox(height: 8),
+          // Become a Delivery Partner
+          _buildBusinessCard(
+            context,
+            icon: Icons.delivery_dining_outlined,
+            title: 'Become a Delivery Partner',
+            subtitle: 'Earn on your own schedule',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Delivery partner registration coming soon')),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  // ──────────────────────────────────────────────
-  // Favorite Restaurant Card
-  // ──────────────────────────────────────────────
-
-  Widget _buildFavoriteRestaurantCard(
-    BuildContext context,
-    WidgetRef ref,
-    Restaurant restaurant,
-  ) {
+  Widget _buildBusinessCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RestaurantMenuScreen(restaurant: restaurant),
-          ),
-        );
-      },
+      onTap: onTap,
       child: Container(
-        width: 160,
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
         decoration: ShapeDecoration(
-          color: Colors.white,
           shape: RoundedRectangleBorder(
-            side: const BorderSide(width: 1, color: Color(0xFFF0F0F0)),
-            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Image
-            Stack(
-              children: [
-                Image.network(
-                  restaurant.bannerUrl,
-                  height: 110,
-                  width: 160,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    height: 110,
-                    width: 160,
-                    color: const Color(0xFFF0F0F0),
-                    child: const Icon(Icons.restaurant,
-                        color: Color(0xFFBFBFBF), size: 32),
-                  ),
-                ),
-                // Favorite button
-                Positioned(
-                  right: 6,
-                  top: 6,
-                  child: GestureDetector(
-                    onTap: () {
-                      ref
-                          .read(favoritesProvider.notifier)
-                          .toggleRestaurant(restaurant.id);
-                    },
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.favorite,
-                        size: 16,
-                        color: const Color(0xFFF5222D),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            // Details
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    restaurant.name,
-                    style: const TextStyle(
-                      color: Color(0xFF262626),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const ShapeDecoration(
+                      color: Color(0xFFFFDAD6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(9999)),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: Icon(icon, color: const Color(0xFFF5222D), size: 20),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.star, size: 12, color: Color(0xFFFFC107)),
-                      const SizedBox(width: 3),
-                      Text(
-                        restaurant.rating.toString(),
-                        style: const TextStyle(
-                          color: Color(0xFF595959),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Color(0xFF1A1C1C),
+                            fontSize: 16,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${restaurant.deliveryTimeMinutes} mins',
-                        style: const TextStyle(
-                          color: Color(0xFF8C8C8C),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFFE71225),
+                            fontSize: 12,
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w400,
+                            height: 1.33,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
+            const Icon(Icons.chevron_right, color: Color(0xFF8C8C8C), size: 20),
           ],
         ),
       ),
@@ -373,111 +575,58 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   // ──────────────────────────────────────────────
-  // Favorite Food Item
+  // Logout Button
   // ──────────────────────────────────────────────
 
-  Widget _buildFavoriteFoodItem(
-    BuildContext context,
-    WidgetRef ref,
-    Food food,
-    Restaurant restaurant,
-  ) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FoodDetailsScreen(
-              food: food,
-              restaurant: restaurant,
-            ),
-          ),
-        );
-      },
-      child: Container(
+  Widget _buildLogoutButton(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(width: 1, color: Color(0xFFF0F0F0)),
-          ),
-        ),
-        child: Row(
-          children: [
-            // Food image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                food.imageUrl,
-                width: 60,
-                height: 60,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 60,
-                  height: 60,
-                  color: const Color(0xFFF0F0F0),
-                  child: const Icon(Icons.restaurant,
-                      color: Color(0xFFBFBFBF), size: 24),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    food.name,
-                    style: const TextStyle(
-                      color: Color(0xFF1A1A1A),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+        child: TextButton(
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Logout'),
+                content: const Text('Are you sure you want to logout?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    restaurant.name,
-                    style: const TextStyle(
-                      color: Color(0xFF999999),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'रु${food.price.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      color: Color(0xFFF5222D),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  TextButton(
+                    onPressed: () {
+                      ref.read(authViewModelProvider.notifier).logout();
+                      Navigator.of(ctx).pop();
+                    },
+                    child: const Text(
+                      'Logout',
+                      style: TextStyle(color: Color(0xFFF5222D)),
                     ),
                   ),
                 ],
               ),
+            );
+          },
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(width: 1, color: Color(0xFFE71225)),
+              borderRadius: BorderRadius.circular(8),
             ),
-            // Remove favorite button
-            GestureDetector(
-              onTap: () {
-                ref.read(favoritesProvider.notifier).toggleFood(food.id);
-              },
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFF1F0),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.favorite,
-                  size: 16,
-                  color: Color(0xFFF5222D),
-                ),
-              ),
+          ),
+          child: const Text(
+            'Logout',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFFE71225),
+              fontSize: 16,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w600,
+              height: 1.25,
             ),
-          ],
+          ),
         ),
       ),
     );
