@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.3.0",
     "daisyui": "^5.5.20",
     "lottie-react": "^2.4.1",
     "lucide-react": "^1.17.0",
@@ -22,7 +23,7 @@
     "@types/node": "^20.19.42",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitest/ui": "^4.1.8",
+    "@vitest/ui": "^2.1.9",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "tailwindcss": "^4",
