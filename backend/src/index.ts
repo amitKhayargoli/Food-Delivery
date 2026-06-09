@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
 import restaurantRoutes from './routes/restaurant.routes';
 import uploadRoutes from './routes/upload.routes';
+import fcmRoutes from './routes/fcm.routes';
 import { supabase } from './db/supabase';
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.get('/', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/restaurant-applications', restaurantRoutes);
+app.use('/api/fcm', fcmRoutes);
 
 const PORT = Number(process.env.PORT) || 5000;
 

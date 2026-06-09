@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
+import { notifyUser } from '../services/fcm.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
@@ -232,15 +233,44 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
 
     // If approved, update the user's role to RESTAURANT_OWNER
     if (status === 'APPROVED' && application.user_id) {
+      console.log(`[RT-BACKEND] 🎉 Approving application "${application.restaurant_name}" for user ${application.user_id}`);
+      console.log(`[RT-BACKEND]   └─ Updating user role: → RESTAURANT_OWNER`);
+
       const { error: roleError } = await supabase.admin
         .from('users')
         .update({ role: 'RESTAURANT_OWNER', status: 'ACTIVE' })
         .eq('id', application.user_id);
 
       if (roleError) {
-        console.error('User role update error:', roleError);
+        console.error('[RT-BACKEND] ❌ User role update error:', roleError);
         // Non-fatal — application is still approved
+      } else {
+        console.log(`[RT-BACKEND] ✅ User ${application.user_id} role updated to RESTAURANT_OWNER`);
+        console.log(`[RT-BACKEND]   └─ Supabase Realtime should now broadcast this change`);
+
+        // Send push notification to the user about their new role
+        notifyUser(application.user_id, supabase.admin, {
+          title: 'Application Approved 🎉',
+          body: `Your restaurant "${application.restaurant_name}" has been approved! You now have owner access.`,
+          data: {
+            type: 'role_change',
+            role: 'RESTAURANT_OWNER',
+          },
+        });
       }
+    }
+
+    // Send rejection notification
+    if (status === 'REJECTED' && application.user_id) {
+      console.log(`[RT-BACKEND] ❌ Rejected application "${application.restaurant_name}" for user ${application.user_id}`);
+      notifyUser(application.user_id, supabase.admin, {
+        title: 'Application Update',
+        body: `Your restaurant "${application.restaurant_name}" application could not be approved at this time.`,
+        data: {
+          type: 'role_change',
+          role: 'CUSTOMER',
+        },
+      });
     }
 
     res.status(200).json({
