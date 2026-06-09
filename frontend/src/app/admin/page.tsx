@@ -1,24 +1,32 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import type { UserRecord } from '@/lib/types'
+import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription'
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/users')
+  const fetchUsers = useCallback(() => {
+    return fetch('/api/users')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load users')
         return res.json()
       })
       .then((data) => setUsers(data))
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchUsers().finally(() => setLoading(false))
+  }, [fetchUsers])
+
+  // Auto-refresh when users table changes (falls back to 10s poll)
+  useRealtimeSubscription('users', '*', fetchUsers, 10_000)
 
   const roleCounts = users.reduce(
     (acc, u) => {
