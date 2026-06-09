@@ -18,7 +18,6 @@ class RestaurantApplicationScreen extends ConsumerStatefulWidget {
 
 class _RestaurantApplicationScreenState
     extends ConsumerState<RestaurantApplicationScreen> {
-  final _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
 
   // Contact Step
@@ -31,15 +30,50 @@ class _RestaurantApplicationScreenState
   final _addressCtrl = TextEditingController();
   final _panNumberCtrl = TextEditingController();
   String? _selectedPanFilePath;
-  bool _isPanUploading = false;
+  String? _selectedCuisine;
 
   // Restaurant Details Step
-  final _descriptionCtrl = TextEditingController();
-  final _cuisineTypeCtrl = TextEditingController();
   String? _selectedCoverImagePath;
-  bool _isCoverImageUploading = false;
   TimeOfDay? _openTime;
   TimeOfDay? _closeTime;
+  String? _selectedFoodCategory;
+
+  static const List<String> _foodCategoryOptions = [
+    'All (Vegetarian & Non-Vegetarian)',
+    'Vegetarian Only',
+    'Non-Vegetarian Only',
+    'Vegan',
+    'Breakfast & Brunch',
+    'Beverages & Desserts',
+  ];
+
+  static const List<String> _cuisineOptions = [
+    'Nepali',
+    'Indian',
+    'Chinese',
+    'Italian',
+    'Mexican',
+    'Japanese',
+    'Thai',
+    'Continental',
+    'Momo & Fast Food',
+    'Newari',
+    'South Indian',
+    'Korean',
+    'Turkish',
+    'Bakery & Cafe',
+  ];
+
+  // Per-field error states
+  String? _ownerNameError;
+  String? _emailError;
+  String? _phoneError;
+  String? _restaurantNameError;
+  String? _addressError;
+  String? _cuisineError;
+  String? _panNumberError;
+  String? _panFileError;
+  String? _foodCategoryError;
 
   bool _isLoading = false;
   bool _submitted = false;
@@ -54,8 +88,7 @@ class _RestaurantApplicationScreenState
     _restaurantNameCtrl.dispose();
     _addressCtrl.dispose();
     _panNumberCtrl.dispose();
-    _descriptionCtrl.dispose();
-    _cuisineTypeCtrl.dispose();
+
     super.dispose();
   }
 
@@ -64,38 +97,58 @@ class _RestaurantApplicationScreenState
 
     // Validate current step before advancing
     if (step > _currentStep) {
+      bool valid = true;
+
       switch (_currentStep) {
         case 0:
-          if (_ownerNameCtrl.text.trim().isEmpty) {
-            setState(() => _error = 'Please enter your full name.');
-            return;
-          }
-          if (_emailCtrl.text.trim().isEmpty || !_emailCtrl.text.contains('@')) {
-            setState(() => _error = 'Please enter a valid email address.');
-            return;
-          }
-          if (_phoneCtrl.text.trim().length < 10) {
-            setState(() => _error = 'Please enter a valid phone number.');
-            return;
-          }
+          setState(() {
+            _ownerNameError = _ownerNameCtrl.text.trim().isEmpty
+                ? 'Please enter your full name.'
+                : null;
+            _emailError = _emailCtrl.text.trim().isEmpty
+                ? 'Please enter your email address.'
+                : !_emailCtrl.text.contains('@')
+                    ? 'Please enter a valid email address.'
+                    : null;
+            final phone = _phoneCtrl.text.trim();
+            if (phone.isEmpty) {
+              _phoneError = 'Please enter your phone number.';
+            } else if (!RegExp(r'^9\d{9}$').hasMatch(phone)) {
+              _phoneError = 'Please enter a valid phone number starting with 9.';
+            } else {
+              _phoneError = null;
+            }
+          });
+          valid = _ownerNameError == null &&
+              _emailError == null &&
+              _phoneError == null;
+          if (!valid) return;
           break;
+
         case 1:
-          if (_restaurantNameCtrl.text.trim().isEmpty) {
-            setState(() => _error = 'Please enter your restaurant name.');
-            return;
-          }
-          if (_addressCtrl.text.trim().isEmpty) {
-            setState(() => _error = 'Please enter your restaurant address.');
-            return;
-          }
-          if (_panNumberCtrl.text.trim().isEmpty) {
-            setState(() => _error = 'Please enter your PAN number.');
-            return;
-          }
-          if (_selectedPanFilePath == null) {
-            setState(() => _error = 'Please upload your PAN certificate.');
-            return;
-          }
+          setState(() {
+            _restaurantNameError = _restaurantNameCtrl.text.trim().isEmpty
+                ? 'Please enter your restaurant name.'
+                : null;
+            _addressError = _addressCtrl.text.trim().isEmpty
+                ? 'Please enter your restaurant address.'
+                : null;
+            _cuisineError = _selectedCuisine == null
+                ? 'Please select your cuisine type.'
+                : null;
+            _panNumberError = _panNumberCtrl.text.trim().isEmpty
+                ? 'Please enter your PAN number.'
+                : null;
+            _panFileError = _selectedPanFilePath == null
+                ? 'Please upload your PAN certificate.'
+                : null;
+          });
+          valid = _restaurantNameError == null &&
+              _addressError == null &&
+              _cuisineError == null &&
+              _panNumberError == null &&
+              _panFileError == null;
+          if (!valid) return;
           break;
       }
     }
@@ -127,6 +180,7 @@ class _RestaurantApplicationScreenState
 
       setState(() {
         _selectedPanFilePath = pickedFile.path;
+        _panFileError = null;
         _error = null;
       });
     }
@@ -180,24 +234,20 @@ class _RestaurantApplicationScreenState
       final storage = di.sl<StorageService>();
 
       // Upload PAN certificate
-      setState(() => _isPanUploading = true);
       final panCertificateUrl = await storage.uploadPanCertificate(
         filePath: _selectedPanFilePath!,
         userId: userId,
         token: token,
       );
-      setState(() => _isPanUploading = false);
 
       // Upload cover image (optional)
       String? coverImageUrl;
       if (_selectedCoverImagePath != null) {
-        setState(() => _isCoverImageUploading = true);
         coverImageUrl = await storage.uploadCoverImage(
           filePath: _selectedCoverImagePath!,
           userId: userId,
           token: token,
         );
-        setState(() => _isCoverImageUploading = false);
       }
 
       // Submit the application
@@ -205,22 +255,18 @@ class _RestaurantApplicationScreenState
       final response = await api.submitRestaurantApplication(
         restaurantName: _restaurantNameCtrl.text.trim(),
         ownerName: _ownerNameCtrl.text.trim(),
-        phone: _phoneCtrl.text.trim(),
+        phone: '+977${_phoneCtrl.text.trim()}',
         email: _emailCtrl.text.trim(),
         address: _addressCtrl.text.trim(),
         panNumber: _panNumberCtrl.text.trim(),
         panCertificateUrl: panCertificateUrl,
-        description: _descriptionCtrl.text.trim().isEmpty
-            ? null
-            : _descriptionCtrl.text.trim(),
+        description: null,
         coverImageUrl: coverImageUrl,
         openTime:
             _openTime != null ? _toTimeString(_openTime!) : null,
         closeTime:
             _closeTime != null ? _toTimeString(_closeTime!) : null,
-        cuisineType: _cuisineTypeCtrl.text.trim().isEmpty
-            ? null
-            : _cuisineTypeCtrl.text.trim(),
+        cuisineType: _selectedCuisine,
         token: token,
       );
 
@@ -233,11 +279,7 @@ class _RestaurantApplicationScreenState
     } catch (e) {
       setState(() => _error = 'An unexpected error occurred: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-        _isPanUploading = false;
-        _isCoverImageUploading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -260,24 +302,29 @@ class _RestaurantApplicationScreenState
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              child: Form(
-                key: _formKey,
-                child: IndexedStack(
-                  index: _currentStep,
-                  children: [
-                    _buildContactStep(),
-                    _buildBusinessStep(),
-                    _buildRestaurantDetailsStep(),
-                  ],
-                ),
-              ),
+              child: _buildCurrentStep(),
             ),
           ),
-          // Bottom action bar
-          _buildBottomBar(),
+          // Bottom action bar (hidden on steps with inline buttons)
+          if (_currentStep == 0) _buildBottomBar(),
         ],
       ),
     );
+  }
+
+  Widget _buildCurrentStep() {
+    // Only build the current step — avoids IndexedStack sizing issues
+    // with double.infinity constraints inside SingleChildScrollView.
+    switch (_currentStep) {
+      case 0:
+        return _buildContactStep();
+      case 1:
+        return _buildBusinessStep();
+      case 2:
+        return _buildRestaurantDetailsStep();
+      default:
+        return _buildContactStep();
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -286,6 +333,7 @@ class _RestaurantApplicationScreenState
 
   Widget _buildContactStep() {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 24),
         // Header row: back button + logo
@@ -317,12 +365,7 @@ class _RestaurantApplicationScreenState
             ),
             const Spacer(),
             // Logo
-            Image.asset(
-              'assets/img/logo.png',
-              width: 160,
-              height: 89,
-              fit: BoxFit.contain,
-            ),
+            _buildLogo(),
             const Spacer(),
             // Spacer to balance the back button width
             const SizedBox(width: 40),
@@ -388,6 +431,12 @@ class _RestaurantApplicationScreenState
                 label: "Owner's Full Name",
                 hint: 'e.g. Jane Doe',
                 controller: _ownerNameCtrl,
+                errorText: _ownerNameError,
+                onChanged: (_) {
+                  if (_ownerNameError != null) {
+                    setState(() => _ownerNameError = null);
+                  }
+                },
               ),
               const SizedBox(height: 24),
               // Business Email Address
@@ -396,29 +445,107 @@ class _RestaurantApplicationScreenState
                 hint: 'jane@restaurant.com',
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                errorText: _emailError,
+                onChanged: (_) {
+                  if (_emailError != null) {
+                    setState(() => _emailError = null);
+                  }
+                },
               ),
               const SizedBox(height: 24),
-              // Mobile Number
-              _stepTextField(
-                label: 'Mobile Number',
-                hint: '+977 98XXXXXXXX',
-                controller: _phoneCtrl,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 4),
+              // Mobile Number (with country code prefix)
               const SizedBox(
                 width: double.infinity,
                 child: Text(
-                  "We'll send a verification code to this number.",
+                  'Mobile Number',
                   style: TextStyle(
-                    color: Color(0xFF949494),
-                    fontSize: 12,
+                    color: Color(0xFF1A1C1C),
+                    fontSize: 14,
                     fontFamily: 'Inter',
-                    fontWeight: FontWeight.w400,
-                    height: 1.33,
+                    fontWeight: FontWeight.w500,
+                    height: 1.29,
                   ),
                 ),
               ),
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: ShapeDecoration(
+                  shape: RoundedRectangleBorder(
+                    side: BorderSide(
+                      width: 1,
+                      color: _phoneError != null
+                          ? const Color(0xFFF5222D)
+                          : const Color(0xFFE8E8E8),
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  color: _phoneError != null
+                      ? const Color(0xFFFFF1F0)
+                      : Colors.transparent,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('🇳🇵', style: TextStyle(fontSize: 20)),
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Text(
+                        '+977',
+                        style: TextStyle(
+                          color: Color(0xFF595959),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          height: 1.50,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 32,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      color: const Color(0xFFE8E8E8),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        onChanged: (_) {
+                          if (_phoneError != null) {
+                            setState(() => _phoneError = null);
+                          }
+                        },
+                        decoration: const InputDecoration(
+                          hintText: '98XXXXXXXX',
+                          hintStyle: TextStyle(
+                            color: Color(0xFFBFBFBF),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_phoneError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _phoneError!,
+                    style: const TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 4),
             ],
           ),
         ),
@@ -429,24 +556,88 @@ class _RestaurantApplicationScreenState
   }
 
   // ──────────────────────────────────────────────
-  //  Step 1 — Business (simplified layout)
+  //  Step 1 — Business (v2 with full design)
   // ──────────────────────────────────────────────
 
   Widget _buildBusinessStep() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
+        const SizedBox(height: 24),
+        // Header row: back button + logo
+        Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0x1A000000),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back,
+                  color: Color(0xFF1A1C1C),
+                  size: 20,
+                ),
+              ),
+            ),
+            const Spacer(),
+            _buildLogo(),
+            const Spacer(),
+            const SizedBox(width: 40),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Title
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            'Business Information',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF1A1C1C),
+              fontSize: 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w700,
+              height: 1.33,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            'Tell us about your restaurant to set up your profile.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF5E3F3C),
+              fontSize: 14,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+              height: 1.43,
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
         // Progress indicator
         _buildProgressIndicator(activeStep: 1),
         const SizedBox(height: 24),
+        // Form card
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           decoration: ShapeDecoration(
             color: const Color(0xFFFAF9F9),
             shape: RoundedRectangleBorder(
-              side: const BorderSide(width: 1, color: Colors.white),
               borderRadius: BorderRadius.circular(8),
             ),
             shadows: [
@@ -461,46 +652,71 @@ class _RestaurantApplicationScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Business Information',
-                style: TextStyle(
-                  color: Color(0xFF1A1C1C),
-                  fontSize: 18,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              const SizedBox(height: 8),
+              // Restaurant Name
+              _buildFieldLabel('Restaurant Name'),
               const SizedBox(height: 4),
-              const Text(
-                'Tell us about your restaurant.',
-                style: TextStyle(
-                  color: Color(0xFF5E3F3C),
-                  fontSize: 14,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              const SizedBox(height: 24),
-              _stepTextField(
-                label: 'Restaurant Name',
-                hint: 'e.g. Dailo Kitchen',
+              _businessTextField(
                 controller: _restaurantNameCtrl,
+                hint: 'e.g., The Spicy Skillet',
+                errorText: _restaurantNameError,
+                onChanged: (_) {
+                  if (_restaurantNameError != null) {
+                    setState(() => _restaurantNameError = null);
+                  }
+                },
               ),
-              const SizedBox(height: 20),
-              _stepTextField(
-                label: 'Address',
-                hint: 'Full restaurant address',
+              const SizedBox(height: 16),
+              // Full Address
+              _buildFieldLabel('Full Address'),
+              const SizedBox(height: 4),
+              _businessTextField(
                 controller: _addressCtrl,
+                hint: 'Full restaurant address',
+                errorText: _addressError,
+                onChanged: (_) {
+                  if (_addressError != null) {
+                    setState(() => _addressError = null);
+                  }
+                },
               ),
-              const SizedBox(height: 20),
-              _stepTextField(
-                label: 'PAN Number',
-                hint: 'e.g. 123456789',
-                controller: _panNumberCtrl,
-              ),
-              const SizedBox(height: 20),
-              // PAN Upload
-              _buildMiniUploadSection(),
+              const SizedBox(height: 16),
+              // Cuisine Type
+              _buildFieldLabel('Cuisine Type'),
+              const SizedBox(height: 4),
+              _buildCuisineDropdown(),
+              if (_cuisineError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _cuisineError!,
+                    style: const TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              // PAN Certificate
+              _buildBusinessPanSection(),
+              if (_panFileError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _panFileError!,
+                    style: const TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 24),
+              // Action buttons
+              _buildBusinessActionButtons(),
             ],
           ),
         ),
@@ -509,12 +725,347 @@ class _RestaurantApplicationScreenState
     );
   }
 
+  Widget _buildFieldLabel(String label) {
+    return SizedBox(
+      width: double.infinity,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF1A1C1C),
+          fontSize: 14,
+          fontFamily: 'Inter',
+          fontWeight: FontWeight.w500,
+          height: 1.29,
+        ),
+      ),
+    );
+  }
+
+  Widget _businessTextField({
+    required TextEditingController controller,
+    required String hint,
+    TextInputType? keyboardType,
+    String? errorText,
+    ValueChanged<String>? onChanged,
+  }) {
+    final hasError = errorText != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: hasError
+                ? const Color(0xFFFFF1F0)
+                : const Color(0xFFF4F3F3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasError ? const Color(0xFFF5222D) : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            onChanged: onChanged,
+            style: const TextStyle(
+              color: Color(0xFF1A1C1C),
+              fontSize: 14,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+            ),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(
+                color: Color(0xFF5C5C5C),
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ),
+        if (errorText != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              errorText!,
+              style: const TextStyle(
+                color: Color(0xFFF5222D),
+                fontSize: 12,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCuisineDropdown() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F3F3),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedCuisine,
+          isExpanded: true,
+          icon: const Icon(
+            Icons.keyboard_arrow_down,
+            color: Color(0xFF1A1C1C),
+            size: 22,
+          ),
+          hint: const Text(
+            'Select primary cuisine',
+            style: TextStyle(
+              color: Color(0xFF1A1C1C),
+              fontSize: 14,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          items: _cuisineOptions.map((cuisine) {
+            return DropdownMenuItem<String>(
+              value: cuisine,
+              child: Text(
+                cuisine,
+                style: const TextStyle(
+                  color: Color(0xFF1A1C1C),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedCuisine = value;
+              _cuisineError = null;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessPanSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // PAN Number + file hint row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildFieldLabel('PAN Certificate'),
+            const Text(
+              'Max 5MB (JPG, PNG)',
+              style: TextStyle(
+                color: Color(0xFF949494),
+                fontSize: 10,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w500,
+                height: 1.40,
+                letterSpacing: 0.20,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        // PAN Number text field
+        _businessTextField(
+          controller: _panNumberCtrl,
+          hint: 'e.g. 123456789',
+          errorText: _panNumberError,
+          onChanged: (_) {
+            if (_panNumberError != null) {
+              setState(() => _panNumberError = null);
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        // Drag & drop upload area
+        _buildPanUploadArea(),
+      ],
+    );
+  }
+
+  Widget _buildPanUploadArea() {
+    final hasFile = _selectedPanFilePath != null;
+    return GestureDetector(
+      onTap: _isLoading ? null : _pickPanCertificate,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: hasFile
+              ? const Color(0xFFF6FFED)
+              : const Color(0xFFF4F3F3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: hasFile
+                ? const Color(0xFF52C41A).withValues(alpha: 0.5)
+                : const Color(0xFFE3E2E2),
+            width: 2,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasFile)
+              const Icon(
+                Icons.check_circle,
+                size: 48,
+                color: Color(0xFF52C41A),
+              )
+            else
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE9E8E8),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.cloud_upload_outlined,
+                  size: 24,
+                  color: Color(0xFF5C5C5C),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              hasFile
+                  ? _selectedPanFilePath!.split('/').last
+                  : 'Click to upload or drag and drop',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF1A1C1C),
+                fontSize: 16,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Upload High Quality Image for Review',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF949494),
+                fontSize: 12,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+                height: 1.33,
+              ),
+            ),
+            if (hasFile) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => setState(() => _selectedPanFilePath = null),
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Remove'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFF5222D),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessActionButtons() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Go Back
+          Expanded(
+            child: SizedBox(
+              height: 44,
+              child: OutlinedButton(
+                onPressed: () => _goToStep(0),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black,
+                  side: const BorderSide(color: Color(0xFFE3E2E2)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: const Text(
+                  'Go Back',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w500,
+                    height: 1.29,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Continue to Menu
+          Expanded(
+            flex: 2,
+            child: SizedBox(
+              height: 44,
+              child: ElevatedButton(
+                onPressed: _isLoading
+                    ? null
+                    : () => _goToStep(2),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEB1727),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFE0E0E0),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  shadowColor: const Color(0x0C000000),
+                ),
+                child: const Text(
+                  'Continue to Menu',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w500,
+                    height: 1.29,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _stepTextField({
     required String label,
     required String hint,
     required TextEditingController controller,
     TextInputType? keyboardType,
+    String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
+    final hasError = errorText != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -537,6 +1088,7 @@ class _RestaurantApplicationScreenState
           child: TextFormField(
             controller: controller,
             keyboardType: keyboardType,
+            onChanged: onChanged,
             style: const TextStyle(
               fontSize: 14,
               fontFamily: 'Inter',
@@ -550,16 +1102,22 @@ class _RestaurantApplicationScreenState
                 fontFamily: 'Inter',
               ),
               filled: true,
-              fillColor: const Color(0xFFF4F3F3),
+              fillColor: hasError
+                  ? const Color(0xFFFFF1F0)
+                  : const Color(0xFFF4F3F3),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+                borderSide: hasError
+                    ? const BorderSide(color: Color(0xFFF5222D), width: 1.5)
+                    : BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+                borderSide: hasError
+                    ? const BorderSide(color: Color(0xFFF5222D), width: 1.5)
+                    : BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -571,101 +1129,107 @@ class _RestaurantApplicationScreenState
             ),
           ),
         ),
+        if (errorText != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              errorText!,
+              style: const TextStyle(
+                color: Color(0xFFF5222D),
+                fontSize: 12,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildMiniUploadSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'PAN Certificate',
-          style: TextStyle(
-            color: Color(0xFF1A1C1C),
-            fontSize: 14,
-            fontFamily: 'Inter',
-            fontWeight: FontWeight.w500,
-            height: 1.29,
-          ),
-        ),
-        const SizedBox(height: 4),
-        GestureDetector(
-          onTap: _isLoading ? null : _pickPanCertificate,
-          child: Container(
-            width: double.infinity,
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: _selectedPanFilePath != null
-                  ? const Color(0xFFF6FFED)
-                  : const Color(0xFFF4F3F3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  _selectedPanFilePath != null
-                      ? Icons.check_circle
-                      : Icons.cloud_upload_outlined,
-                  size: 20,
-                  color: _selectedPanFilePath != null
-                      ? const Color(0xFF52C41A)
-                      : const Color(0xFF5C5C5C),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedPanFilePath != null
-                        ? _selectedPanFilePath!.split('/').last
-                        : 'Tap to upload PAN certificate',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: _selectedPanFilePath != null
-                          ? const Color(0xFF1A1C1C)
-                          : const Color(0xFF5C5C5C),
-                      fontFamily: 'Inter',
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (_selectedPanFilePath != null)
-                  GestureDetector(
-                    onTap: () => setState(() => _selectedPanFilePath = null),
-                    child: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Color(0xFF8C8C8C),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+
 
   // ──────────────────────────────────────────────
-  //  Step 2 — Restaurant Details (simplified layout)
+  //  Step 2 — Menu (full design)
   // ──────────────────────────────────────────────
 
   Widget _buildRestaurantDetailsStep() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
+        const SizedBox(height: 24),
+        // Header row: back button + logo
+        Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0x1A000000),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back,
+                  color: Color(0xFF1A1C1C),
+                  size: 20,
+                ),
+              ),
+            ),
+            const Spacer(),
+            _buildLogo(),
+            const Spacer(),
+            const SizedBox(width: 40),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Title
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            'Restaurant Details',
+            style: TextStyle(
+              color: Color(0xFF1A1C1C),
+              fontSize: 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w700,
+              height: 1.33,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            'Step 3 of 3: Let customers know what you serve.',
+            style: TextStyle(
+              color: Color(0xFF949494),
+              fontSize: 14,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+              height: 1.43,
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
         // Progress indicator
         _buildProgressIndicator(activeStep: 2),
         const SizedBox(height: 24),
+        // Form card
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(16),
           decoration: ShapeDecoration(
             color: const Color(0xFFFAF9F9),
             shape: RoundedRectangleBorder(
-              side: const BorderSide(width: 1, color: Colors.white),
+              side: const BorderSide(width: 1, color: Color(0xFFE9E8E8)),
               borderRadius: BorderRadius.circular(8),
             ),
             shadows: [
@@ -680,112 +1244,222 @@ class _RestaurantApplicationScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Restaurant Details',
-                style: TextStyle(
-                  color: Color(0xFF1A1C1C),
-                  fontSize: 18,
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w700,
+              // Primary Food Category
+              _buildFieldLabel('Primary Food Category'),
+              const SizedBox(height: 4),
+              _buildFoodCategoryDropdown(),
+              if (_foodCategoryError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _foodCategoryError!,
+                    style: const TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 12,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              // Standard Operating Hours
+              _buildFieldLabel('Standard Operating Hours'),
+              const SizedBox(height: 4),
+              _buildStep3TimePickers(),
+              const SizedBox(height: 16),
+              // Upload Menu or Logo
+              _buildStep3UploadSection(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Submit button + terms
+        _buildStep3SubmitSection(),
+        // Error
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F0),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFF5222D).withValues(alpha: 0.3),
                 ),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Help customers discover your restaurant.',
-                style: TextStyle(
-                  color: Color(0xFF5E3F3C),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Color(0xFFF5222D), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Color(0xFFF5222D),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+
+
+  Widget _buildFoodCategoryDropdown() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F3F3),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedFoodCategory,
+          isExpanded: true,
+          icon: const Icon(
+            Icons.keyboard_arrow_down,
+            color: Color(0xFF1A1C1C),
+            size: 22,
+          ),
+          hint: const Text(
+            'Select category...',
+            style: TextStyle(
+              color: Color(0xFF1A1C1C),
+              fontSize: 14,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          items: _foodCategoryOptions.map((category) {
+            return DropdownMenuItem<String>(
+              value: category,
+              child: Text(
+                category,
+                style: const TextStyle(
+                  color: Color(0xFF1A1C1C),
                   fontSize: 14,
                   fontFamily: 'Inter',
                   fontWeight: FontWeight.w400,
                 ),
               ),
-              const SizedBox(height: 24),
-              _stepTextField(
-                label: 'Restaurant Description (optional)',
-                hint: 'Tell customers about your restaurant',
-                controller: _descriptionCtrl,
-              ),
-              const SizedBox(height: 20),
-              // Cover image upload
-              _buildMiniCoverUpload(),
-              const SizedBox(height: 20),
-              // Opening Hours
-              _buildSimpleTimePicker(),
-              const SizedBox(height: 20),
-              _stepTextField(
-                label: 'Cuisine Type (optional)',
-                hint: 'e.g. Nepali, Indian, Chinese',
-                controller: _cuisineTypeCtrl,
-              ),
-            ],
-          ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedFoodCategory = value;
+              _foodCategoryError = null;
+            });
+          },
         ),
-        const SizedBox(height: 24),
-        // Error
-        if (_error != null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1F0),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFFF5222D).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Color(0xFFF5222D), size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(
-                      color: Color(0xFFF5222D),
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 8),
+      ),
+    );
+  }
+
+  Widget _buildStep3TimePickers() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Opening Time
+        _buildTimeLabel('Opening Time'),
+        const SizedBox(height: 4),
+        _buildTimeSlotButton(
+          time: _openTime,
+          onTap: _pickOpenTime,
+          placeholder: '09:00 AM',
+        ),
+        const SizedBox(height: 12),
+        // Closing Time
+        _buildTimeLabel('Closing Time'),
+        const SizedBox(height: 4),
+        _buildTimeSlotButton(
+          time: _closeTime,
+          onTap: _pickCloseTime,
+          placeholder: '10:00 PM',
+        ),
       ],
     );
   }
 
-  Widget _buildMiniCoverUpload() {
+  Widget _buildTimeLabel(String label) {
+    return SizedBox(
+      width: 156,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF949494),
+          fontSize: 10,
+          fontFamily: 'Inter',
+          fontWeight: FontWeight.w500,
+          height: 1.40,
+          letterSpacing: 0.20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeSlotButton({
+    required TimeOfDay? time,
+    required VoidCallback onTap,
+    required String placeholder,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F3F3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.access_time, size: 18, color: Color(0xFF5C5C5C)),
+            const SizedBox(width: 12),
+            Text(
+              time != null ? _formatTime(time) : placeholder,
+              style: TextStyle(
+                fontSize: 14,
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w400,
+                height: 1.43,
+                color: time != null
+                    ? const Color(0xFF1A1C1C)
+                    : const Color(0xFF5C5C5C),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep3UploadSection() {
+    final hasFile = _selectedCoverImagePath != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            _buildFieldLabel('Upload Menu or Logo'),
             const Text(
-              'Cover Image',
+              'Max 5MB (JPG, PNG)',
               style: TextStyle(
-                color: Color(0xFF1A1C1C),
-                fontSize: 14,
+                color: Color(0xFF949494),
+                fontSize: 10,
                 fontFamily: 'Inter',
                 fontWeight: FontWeight.w500,
-                height: 1.29,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Optional',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF757575),
-                  fontFamily: 'Inter',
-                ),
+                height: 1.40,
+                letterSpacing: 0.20,
               ),
             ),
           ],
@@ -795,52 +1469,80 @@ class _RestaurantApplicationScreenState
           onTap: _isLoading ? null : _pickCoverImage,
           child: Container(
             width: double.infinity,
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
-              color: _selectedCoverImagePath != null
-                  ? const Color(0xFFFFF8E1)
+              color: hasFile
+                  ? const Color(0xFFF6FFED)
                   : const Color(0xFFF4F3F3),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: hasFile
+                    ? const Color(0xFF52C41A).withValues(alpha: 0.5)
+                    : const Color(0xFFE3E2E2),
+                width: 2,
+              ),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  _selectedCoverImagePath != null
-                      ? Icons.check_circle
-                      : Icons.image_outlined,
-                  size: 20,
-                  color: _selectedCoverImagePath != null
-                      ? const Color(0xFFF57C00)
-                      : const Color(0xFF5C5C5C),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedCoverImagePath != null
-                        ? _selectedCoverImagePath!.split('/').last
-                        : 'Tap to upload cover image',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: _selectedCoverImagePath != null
-                          ? const Color(0xFF1A1C1C)
-                          : const Color(0xFF5C5C5C),
-                      fontFamily: 'Inter',
+                if (hasFile)
+                  const Icon(
+                    Icons.check_circle,
+                    size: 48,
+                    color: Color(0xFF52C41A),
+                  )
+                else
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE9E8E8),
+                      shape: BoxShape.circle,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (_selectedCoverImagePath != null)
-                  GestureDetector(
-                    onTap: () =>
-                        setState(() => _selectedCoverImagePath = null),
                     child: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Color(0xFF8C8C8C),
+                      Icons.image_outlined,
+                      size: 24,
+                      color: Color(0xFF5C5C5C),
                     ),
                   ),
+                const SizedBox(height: 8),
+                Text(
+                  hasFile
+                      ? _selectedCoverImagePath!.split('/').last
+                      : 'Click to upload or drag and drop',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF1A1C1C),
+                    fontSize: 16,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'High quality images help attract more\ncustomers',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF949494),
+                    fontSize: 12,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w400,
+                    height: 1.33,
+                  ),
+                ),
+                if (hasFile) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () => setState(() => _selectedCoverImagePath = null),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Remove'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFF5222D),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -849,112 +1551,120 @@ class _RestaurantApplicationScreenState
     );
   }
 
-  Widget _buildSimpleTimePicker() {
+  Widget _buildStep3SubmitSection() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            const Text(
-              'Opening Hours',
+        // Go Back button
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton(
+            onPressed: () => _goToStep(1),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black,
+              side: const BorderSide(color: Color(0xFFE3E2E2)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            child: const Text(
+              'Go Back to Business',
               style: TextStyle(
-                color: Color(0xFF1A1C1C),
                 fontSize: 14,
                 fontFamily: 'Inter',
                 fontWeight: FontWeight.w500,
                 height: 1.29,
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Optional',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF757575),
-                  fontFamily: 'Inter',
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: _miniTimeSlot(
-                label: 'Open',
-                icon: Icons.wb_sunny_outlined,
-                time: _openTime,
-                onTap: _pickOpenTime,
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    // Validate required fields for final step
+                    setState(() {
+                      _error = null;
+                      _foodCategoryError = _selectedFoodCategory == null
+                          ? 'Please select a primary food category.'
+                          : null;
+                    });
+                    if (_foodCategoryError != null) return;
+                    _submit();
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEB1727),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFFE0E0E0),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
+              shadowColor: const Color(0x0C000000),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _miniTimeSlot(
-                label: 'Close',
-                icon: Icons.nightlight_outlined,
-                time: _closeTime,
-                onTap: _pickCloseTime,
-              ),
-            ),
-          ],
+            child: _isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Submit Application',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w700,
+                      height: 1.33,
+                    ),
+                  ),
+          ),
         ),
-        if (_openTime != null && _closeTime != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              '${_formatTime(_openTime!)} - ${_formatTime(_closeTime!)}',
-              style: TextStyle(
-                fontSize: 13,
-                color: _isCloseBeforeOpen
-                    ? const Color(0xFFF57C00)
-                    : const Color(0xFF52C41A),
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w500,
-              ),
+        const SizedBox(height: 8),
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            "By submitting, you agree to Dailo's Partner Terms of Service.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF949494),
+              fontSize: 12,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+              height: 1.33,
             ),
           ),
+        ),
       ],
     );
   }
-
-  Widget _miniTimeSlot({
-    required String label,
-    required IconData icon,
-    required TimeOfDay? time,
-    required VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+  Widget _buildLogo() {
+    return Image.asset(
+      'assets/img/logo.png',
+      width: 160,
+      height: 89,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => Container(
+        width: 160,
+        height: 89,
         decoration: BoxDecoration(
-          color: time != null ? const Color(0xFFFFF1F0) : const Color(0xFFF4F3F3),
+          color: const Color(0xFFF4F3F3),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: const Color(0xFF5C5C5C)),
-            const SizedBox(width: 8),
-            Text(
-              time != null ? _formatTime(time) : label,
-              style: TextStyle(
-                fontSize: 14,
-                fontFamily: 'Inter',
-                color: time != null
-                    ? const Color(0xFF1A1C1C)
-                    : const Color(0xFF5C5C5C),
-              ),
-            ),
-          ],
+        child: const Icon(
+          Icons.restaurant,
+          color: Color(0xFF5C5C5C),
+          size: 32,
         ),
       ),
     );
@@ -968,189 +1678,98 @@ class _RestaurantApplicationScreenState
     return SizedBox(
       width: double.infinity,
       height: 50,
-      child: Stack(
+      child: Row(
         children: [
-          // Connecting lines
-          Positioned(
-            left: 103.30,
-            top: 24,
-            child: Container(
-              width: 48.19,
-              height: 2,
-              decoration: BoxDecoration(
-                color: activeStep >= 1
-                    ? const Color(0xFFEB1727)
-                    : const Color(0xFFE3E2E2),
+          const Spacer(),
+          _stepDot(
+            number: '1',
+            label: 'Contact',
+            isActive: activeStep >= 0,
+          ),
+          Container(
+            width: 48,
+            height: 2,
+            decoration: BoxDecoration(
+              color: activeStep >= 1
+                  ? const Color(0xFFEB1727)
+                  : const Color(0xFFE3E2E2),
+            ),
+          ),
+          _stepDot(
+            number: '2',
+            label: 'Business',
+            isActive: activeStep >= 1,
+            bold: activeStep == 1,
+          ),
+          Container(
+            width: 48,
+            height: 2,
+            decoration: BoxDecoration(
+              color: activeStep >= 2
+                  ? const Color(0xFFEB1727)
+                  : const Color(0xFFE3E2E2),
+            ),
+          ),
+          _stepDot(
+            number: '3',
+            label: 'Menu',
+            isActive: activeStep >= 2,
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepDot({
+    required String number,
+    required String label,
+    required bool isActive,
+    bool bold = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      color: const Color(0xFFFAF9F9),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? const Color(0xFFEB1727)
+                  : const Color(0xFFE3E2E2),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isActive
+                      ? Colors.white
+                      : const Color(0xFF5C5C5C),
+                  fontSize: 14,
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w500,
+                  height: 1.29,
+                ),
               ),
             ),
           ),
-          Positioned(
-            left: 213.63,
-            top: 24,
-            child: Container(
-              width: 48.19,
-              height: 2,
-              decoration: BoxDecoration(
-                color: activeStep >= 2
-                    ? const Color(0xFFEB1727)
-                    : const Color(0xFFE3E2E2),
-              ),
-            ),
-          ),
-          // Step 1 — Contact
-          Positioned(
-            left: 48.19,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: const Color(0xFFFAF9F9),
-              child: Column(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: activeStep >= 0
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFFE3E2E2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '1',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: activeStep >= 0
-                              ? Colors.white
-                              : const Color(0xFF5C5C5C),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                          fontWeight: FontWeight.w500,
-                          height: 1.29,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Contact',
-                    style: TextStyle(
-                      color: activeStep >= 0
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFF5C5C5C),
-                      fontSize: 10,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w700,
-                      height: 1.40,
-                      letterSpacing: 0.20,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Step 2 — Business
-          Positioned(
-            left: 151.48,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: const Color(0xFFFAF9F9),
-              child: Column(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: activeStep >= 1
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFFE3E2E2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '2',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: activeStep >= 1
-                              ? Colors.white
-                              : const Color(0xFF5C5C5C),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                          fontWeight: FontWeight.w500,
-                          height: 1.29,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Business',
-                    style: TextStyle(
-                      color: activeStep >= 1
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFF5C5C5C),
-                      fontSize: 10,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w700,
-                      height: 1.40,
-                      letterSpacing: 0.20,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Step 3 — Menu
-          Positioned(
-            left: 261.81,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: const Color(0xFFFAF9F9),
-              child: Column(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: activeStep >= 2
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFFE3E2E2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '3',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: activeStep >= 2
-                              ? Colors.white
-                              : const Color(0xFF5C5C5C),
-                          fontSize: 14,
-                          fontFamily: 'Inter',
-                          fontWeight: FontWeight.w500,
-                          height: 1.29,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Menu',
-                    style: TextStyle(
-                      color: activeStep >= 2
-                          ? const Color(0xFFEB1727)
-                          : const Color(0xFF5C5C5C),
-                      fontSize: 10,
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w700,
-                      height: 1.40,
-                      letterSpacing: 0.20,
-                    ),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isActive
+                  ? const Color(0xFFEB1727)
+                  : const Color(0xFF5C5C5C),
+              fontSize: 10,
+              fontFamily: 'Inter',
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+              height: 1.40,
+              letterSpacing: 0.20,
             ),
           ),
         ],
@@ -1180,15 +1799,7 @@ class _RestaurantApplicationScreenState
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: _isLoading
-                  ? null
-                  : () {
-                      if (_currentStep < 2) {
-                        _goToStep(_currentStep + 1);
-                      } else {
-                        _submit();
-                      }
-                    },
+              onPressed: _isLoading ? null : () => _goToStep(1),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFEB1727),
                 foregroundColor: Colors.white,
@@ -1207,18 +1818,10 @@ class _RestaurantApplicationScreenState
                         color: Colors.white,
                       ),
                     )
-                  : Text(
-                      _currentStep == 0
-                          ? 'Continue to Business Details'
-                          : _currentStep == 1
-                              ? 'Continue to Restaurant Details'
-                              : _isPanUploading
-                                  ? 'Uploading PAN Certificate...'
-                                  : _isCoverImageUploading
-                                      ? 'Uploading Cover Image...'
-                                      : 'Submit Application',
+                  : const Text(
+                      'Continue to Business Information',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         fontFamily: 'Inter',
@@ -1229,28 +1832,7 @@ class _RestaurantApplicationScreenState
             ),
           ),
           const SizedBox(height: 8),
-          if (_currentStep > 0)
-            SizedBox(
-              width: double.infinity,
-              height: 36,
-              child: TextButton(
-                onPressed: () => _goToStep(_currentStep - 1),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFBB0018),
-                  padding: EdgeInsets.zero,
-                ),
-                child: const Text(
-                  'Back',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.20,
-                  ),
-                ),
-              ),
-            ),
+
           // "Already have an account?" link (only on step 0)
           if (_currentStep == 0)
             Row(
@@ -1377,13 +1959,6 @@ class _RestaurantApplicationScreenState
   //  Helpers
   // ──────────────────────────────────────────────
 
-  int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
-
-  bool get _isCloseBeforeOpen =>
-      _openTime != null &&
-      _closeTime != null &&
-      _timeToMinutes(_closeTime!) <= _timeToMinutes(_openTime!);
-
   String _formatTime(TimeOfDay time) {
     final hour = time.hour;
     final minute = time.minute;
@@ -1409,7 +1984,7 @@ class _RestaurantApplicationScreenState
             primary: Color(0xFFF5222D),
           ),
         ),
-        child: child!,
+        child: child ?? const SizedBox.shrink(),
       ),
     );
     if (picked != null) {
@@ -1427,7 +2002,7 @@ class _RestaurantApplicationScreenState
             primary: Color(0xFFF5222D),
           ),
         ),
-        child: child!,
+        child: child ?? const SizedBox.shrink(),
       ),
     );
     if (picked != null) {
