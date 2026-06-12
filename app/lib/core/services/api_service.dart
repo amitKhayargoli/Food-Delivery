@@ -89,6 +89,72 @@ class ApiService {
     return sendOtp(phone: phone, purpose: purpose);
   }
 
+  /// Submit a restaurant owner application
+  Future<RestaurantApplicationResponse> submitRestaurantApplication({
+    required String restaurantName,
+    required String ownerName,
+    required String phone,
+    required String email,
+    required String address,
+    required String panNumber,
+    required String panCertificateUrl,
+    String? description,
+    String? logoUrl,
+    String? coverImageUrl,
+    String? openTime,
+    String? closeTime,
+    String? cuisineType,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/restaurant-applications',
+        data: {
+          'restaurant_name': restaurantName,
+          'owner_name': ownerName,
+          'phone': phone,
+          'email': email,
+          'address': address,
+          'pan_number': panNumber,
+          'pan_certificate_url': panCertificateUrl,
+          if (description != null) 'description': description,
+          if (logoUrl != null) 'logo_url': logoUrl,
+          if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
+          if (openTime != null) 'open_time': openTime,
+          if (closeTime != null) 'close_time': closeTime,
+          if (cuisineType != null) 'cuisine_type': cuisineType,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final app = data['application'] as Map<String, dynamic>?;
+      return RestaurantApplicationResponse(
+        message: data['message'] as String? ?? '',
+        applicationId: app?['id'] as String?,
+        status: app?['status'] as String? ?? 'PENDING',
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch the current user's restaurant application status
+  Future<Map<String, dynamic>?> getMyApplication({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/restaurant-applications/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['application'] as Map<String, dynamic>?;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Extract error message from DioException
   String _extractError(DioException e) {
     if (e.response?.data is Map<String, dynamic>) {
@@ -155,6 +221,18 @@ class AvailabilityResponse {
     required this.usernameTaken,
     required this.phoneTaken,
     required this.emailTaken,
+  });
+}
+
+class RestaurantApplicationResponse {
+  final String message;
+  final String? applicationId;
+  final String status;
+
+  RestaurantApplicationResponse({
+    required this.message,
+    this.applicationId,
+    required this.status,
   });
 }
 

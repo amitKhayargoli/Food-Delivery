@@ -21,3 +21,6 @@ node_modules/
 .vscode
 graphify-out
 opencode.json
+*.md
+*.csv
+settings.json
