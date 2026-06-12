@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
+import '../../providers/auth_provider.dart';
 import 'restaurant_menu_screen.dart';
 import '../owner/restaurant_application_screen.dart';
+import '../auth/login_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -89,9 +92,8 @@ class ProfileScreen extends ConsumerWidget {
                   const Text(
                     'Profile',
                     style: TextStyle(
-                      color: Color(0xFF1A1C1C),
+                      color: Color(0xFF1A1A1A),
                       fontSize: 18,
-                      fontFamily: 'Inter',
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -227,9 +229,8 @@ class ProfileScreen extends ConsumerWidget {
               userName,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF1A1C1C),
+                color: Color(0xFF1A1A1A),
                 fontSize: 24,
-                fontFamily: 'Inter',
                 fontWeight: FontWeight.w700,
                 height: 1.33,
               ),
@@ -243,9 +244,8 @@ class ProfileScreen extends ConsumerWidget {
               userEmail,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF262626),
+                color: Color(0xFF595959),
                 fontSize: 14,
-                fontFamily: 'Inter',
                 fontWeight: FontWeight.w400,
                 height: 1.43,
               ),
@@ -279,9 +279,8 @@ class ProfileScreen extends ConsumerWidget {
               const Text(
                 'Favorite Restaurants',
                 style: TextStyle(
-                  color: Color(0xFF1A1C1C),
+                  color: Color(0xFF1A1A1A),
                   fontSize: 18,
-                  fontFamily: 'Inter',
                   fontWeight: FontWeight.w700,
                   height: 1.33,
                 ),
@@ -298,7 +297,6 @@ class ProfileScreen extends ConsumerWidget {
                   style: TextStyle(
                     color: Color(0xFFF5222D),
                     fontSize: 14,
-                    fontFamily: 'Inter',
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -329,8 +327,8 @@ class ProfileScreen extends ConsumerWidget {
         },
         child: Container(
           width: double.infinity,
-          height: 90,
-          padding: const EdgeInsets.all(12),
+          height: 112,
+          padding: const EdgeInsets.all(14),
           decoration: ShapeDecoration(
             color: Colors.white,
             shape: RoundedRectangleBorder(
@@ -353,18 +351,18 @@ class ProfileScreen extends ConsumerWidget {
             children: [
               // Restaurant image
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
                 child: Image.network(
                   restaurant.bannerUrl,
-                  width: 64,
-                  height: 64,
+                  width: 80,
+                  height: 80,
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => Container(
-                    width: 64,
-                    height: 64,
+                    width: 80,
+                    height: 80,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF0F0F0),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.restaurant, color: Color(0xFFBFBFBF), size: 28),
                   ),
@@ -381,22 +379,20 @@ class ProfileScreen extends ConsumerWidget {
                     Text(
                       restaurant.name,
                       style: const TextStyle(
-                        color: Color(0xFF1A1C1C),
+                        color: Color(0xFF1A1A1A),
                         fontSize: 16,
-                        fontFamily: 'Inter',
                         fontWeight: FontWeight.w600,
                         height: 1.25,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                    const SizedBox(height: 6),
                     Text(
                       '${restaurant.rating} (120+) • ${restaurant.deliveryTimeMinutes} mins',
                       style: const TextStyle(
-                        color: Color(0xFFE71225),
-                        fontSize: 12,
-                        fontFamily: 'Inter',
+                        color: Color(0xFF595959),
+                        fontSize: 13,
                         fontWeight: FontWeight.w400,
                         height: 1.33,
                       ),
@@ -410,8 +406,8 @@ class ProfileScreen extends ConsumerWidget {
                   ref.read(favoritesProvider.notifier).toggleRestaurant(restaurant.id);
                 },
                 child: Container(
-                  width: 32,
-                  height: 32,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: ref
                             .read(favoritesProvider)
@@ -424,7 +420,7 @@ class ProfileScreen extends ConsumerWidget {
                     ref.read(favoritesProvider).isRestaurantFavorite(restaurant.id)
                         ? Icons.favorite
                         : Icons.favorite_border,
-                    size: 18,
+                    size: 22,
                     color: ref.read(favoritesProvider).isRestaurantFavorite(restaurant.id)
                         ? const Color(0xFFF5222D)
                         : const Color(0xFF8C8C8C),
@@ -453,9 +449,8 @@ class ProfileScreen extends ConsumerWidget {
           const Text(
             'Business & Partnerships',
             style: TextStyle(
-              color: Color(0xFF1A1C1C),
+              color: Color(0xFF1A1A1A),
               fontSize: 18,
-              fontFamily: 'Inter',
               fontWeight: FontWeight.w700,
               height: 1.33,
             ),
@@ -464,7 +459,7 @@ class ProfileScreen extends ConsumerWidget {
           // Register as Restaurant Owner
           _buildBusinessCard(
             context,
-            icon: Icons.store_outlined,
+            imagePath: 'assets/img/Profile/Restaurantowner.png',
             title: 'Register as Restaurant Owner',
             subtitle: 'List your store and reach more customers',
             onTap: () {
@@ -480,7 +475,7 @@ class ProfileScreen extends ConsumerWidget {
           // Become a Delivery Partner
           _buildBusinessCard(
             context,
-            icon: Icons.delivery_dining_outlined,
+            imagePath: 'assets/img/Profile/delivery.png',
             title: 'Become a Delivery Partner',
             subtitle: 'Earn on your own schedule',
             onTap: () {
@@ -496,7 +491,7 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _buildBusinessCard(
     BuildContext context, {
-    required IconData icon,
+    required String imagePath,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -523,16 +518,14 @@ class ProfileScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const ShapeDecoration(
-                      color: Color(0xFFFFDAD6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(9999)),
-                      ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      imagePath,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
                     ),
-                    child: Icon(icon, color: const Color(0xFFF5222D), size: 20),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -544,9 +537,8 @@ class ProfileScreen extends ConsumerWidget {
                         Text(
                           title,
                           style: const TextStyle(
-                            color: Color(0xFF1A1C1C),
+                            color: Color(0xFF1A1A1A),
                             fontSize: 16,
-                            fontFamily: 'Inter',
                             fontWeight: FontWeight.w600,
                             height: 1.25,
                           ),
@@ -554,9 +546,8 @@ class ProfileScreen extends ConsumerWidget {
                         Text(
                           subtitle,
                           style: const TextStyle(
-                            color: Color(0xFFE71225),
-                            fontSize: 12,
-                            fontFamily: 'Inter',
+                            color: Color(0xFF666666),
+                            fontSize: 13,
                             fontWeight: FontWeight.w400,
                             height: 1.33,
                           ),
@@ -596,9 +587,25 @@ class ProfileScreen extends ConsumerWidget {
                     child: const Text('Cancel'),
                   ),
                   TextButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // Capture what we need before any async gap
+                      final authProvider = context.read<AuthProvider>();
+                      final dialogNavigator = Navigator.of(ctx);
+                      final mainNavigator = Navigator.of(context);
+
+                      // Clear the Riverpod auth state + Supabase session
                       ref.read(authViewModelProvider.notifier).logout();
-                      Navigator.of(ctx).pop();
+                      // Clear the Provider auth state (JWT token, SharedPreferences, etc.)
+                      await authProvider.logout();
+                      // Pop the dialog
+                      dialogNavigator.pop();
+                      // Navigate to login screen, clearing the nav stack
+                      mainNavigator.pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (_) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
                     },
                     child: const Text(
                       'Logout',
@@ -612,7 +619,7 @@ class ProfileScreen extends ConsumerWidget {
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             shape: RoundedRectangleBorder(
-              side: const BorderSide(width: 1, color: Color(0xFFE71225)),
+              side: const BorderSide(width: 1, color: Color(0xFFF5222D)),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
@@ -620,9 +627,8 @@ class ProfileScreen extends ConsumerWidget {
             'Logout',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFFE71225),
+              color: Color(0xFFF5222D),
               fontSize: 16,
-              fontFamily: 'Inter',
               fontWeight: FontWeight.w600,
               height: 1.25,
             ),

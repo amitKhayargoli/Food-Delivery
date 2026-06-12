@@ -74,6 +74,7 @@ class MyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
+      navigatorKey: di.sl<GlobalKey<NavigatorState>>(),
       home: const SplashScreen(),
     );
   }
