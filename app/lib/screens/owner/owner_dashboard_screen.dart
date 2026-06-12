@@ -5,6 +5,7 @@ import '../../core/services/api_service.dart';
 import '../../widgets/toggle_switch.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import 'order_detail_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
@@ -42,11 +43,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   List<Order> get _readyOrders =>
       _allOrders.where((o) => o.status == OrderStatus.ready).toList();
 
+  List<Order> get _outForDeliveryOrders =>
+      _allOrders.where((o) => o.status == OrderStatus.pickedUp).toList();
+
+  List<Order> get _deliveredOrders =>
+      _allOrders.where((o) => o.status == OrderStatus.delivered).toList();
+
   List<Order> get _currentOrders {
     switch (_selectedTab) {
       case 0: return _newOrders;
       case 1: return _preparingOrders;
       case 2: return _readyOrders;
+      case 3: return _outForDeliveryOrders;
+      case 4: return _deliveredOrders;
       default: return _newOrders;
     }
   }
@@ -209,6 +218,66 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     }
   }
 
+  Future<void> _markAsPickedUp(Order order) async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.markOrderAsPickedUp(orderId: order.id, token: token);
+      _fetchOrders();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order is out for delivery!'),
+            backgroundColor: Color(0xFF1967D2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _markAsDelivered(Order order) async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.markOrderAsDelivered(orderId: order.id, token: token);
+      _fetchOrders();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order delivered!'),
+            backgroundColor: Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   // ── Time formatting ──────────────────────────
 
   String _timeAgo(DateTime dateTime) {
@@ -334,13 +403,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         height: 30,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: 3,
+          itemCount: 5,
           separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (context, index) {
             final tabs = [
               ('New', _newOrders.length),
               ('Preparing', _preparingOrders.length),
               ('Ready', _readyOrders.length),
+              ('Out for Delivery', _outForDeliveryOrders.length),
+              ('Delivered', _deliveredOrders.length),
             ];
             final (label, count) = tabs[index];
             final isActive = _selectedTab == index;
@@ -439,20 +510,28 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   children: [
                     Icon(
                       _selectedTab == 0
-                          ? Icons.inbox_rounded
-                          : _selectedTab == 1
-                              ? Icons.kitchen_rounded
-                              : Icons.check_circle_outline_rounded,
+                      ? Icons.inbox_rounded
+                      : _selectedTab == 1
+                          ? Icons.kitchen_rounded
+                          : _selectedTab == 2
+                              ? Icons.check_circle_outline_rounded
+                              : _selectedTab == 3
+                                  ? Icons.delivery_dining_rounded
+                                  : Icons.task_alt_rounded,
                       size: 48,
                       color: const Color(0xFFD9D9D9),
                     ),
                     const SizedBox(height: 12),
                     Text(
                       _selectedTab == 0
-                          ? 'No new orders yet'
-                          : _selectedTab == 1
-                              ? 'No orders in preparation'
-                              : 'No ready orders',
+                      ? 'No new orders yet'
+                      : _selectedTab == 1
+                          ? 'No orders in preparation'
+                          : _selectedTab == 2
+                              ? 'No ready orders'
+                              : _selectedTab == 3
+                                  ? 'No orders out for delivery'
+                                  : 'No delivered orders',
                       style: const TextStyle(
                         color: Color(0xFF8E8E93),
                         fontSize: 15,
@@ -482,7 +561,21 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         itemCount: _currentOrders.length,
-        itemBuilder: (context, index) => _buildOrderCard(_currentOrders[index]),
+        itemBuilder: (context, index) => GestureDetector(
+          onTap: () async {
+            final changed = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => OrderDetailScreen(
+                  order: _currentOrders[index],
+                ),
+              ),
+            );
+            if (changed == true && mounted) {
+              _fetchOrders();
+            }
+          },
+          child: _buildOrderCard(_currentOrders[index]),
+        ),
       ),
     );
   }
@@ -892,6 +985,56 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         );
 
       case 2: // Ready
+        return SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            onPressed: () => _markAsPickedUp(order),
+            icon: const Icon(Icons.delivery_dining_rounded, size: 18),
+            label: const Text(
+              'Out for Delivery',
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  height: 1.29),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1967D2),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 0,
+            ),
+          ),
+        );
+
+      case 3: // Out for Delivery
+        return SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton.icon(
+            onPressed: () => _markAsDelivered(order),
+            icon: const Icon(Icons.task_alt_rounded, size: 18),
+            label: const Text(
+              'Mark as Delivered',
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  height: 1.29),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E8E3E),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 0,
+            ),
+          ),
+        );
+
+      case 4: // Delivered — read-only, no action needed
         return Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           decoration: BoxDecoration(
@@ -901,12 +1044,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.check_circle,
+              const Icon(Icons.task_alt_rounded,
                   color: Color(0xFF1E8E3E), size: 20),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'Ready for pickup / delivery',
+                  'Order delivered',
                   style: TextStyle(
                     color: Color(0xFF1A1C1C),
                     fontWeight: FontWeight.w600,
@@ -916,8 +1059,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 ),
               ),
               Text(
-                order.readyAt != null
-                    ? _timeAgo(order.readyAt!)
+                order.deliveredAt != null
+                    ? _timeAgo(order.deliveredAt!)
                     : 'Just now',
                 style: const TextStyle(
                   color: Color(0xFF5C5C5C),
@@ -933,4 +1076,4 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       default:
         return const SizedBox.shrink();
     }
-  }}
+  }

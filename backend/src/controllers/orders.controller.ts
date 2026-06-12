@@ -153,7 +153,7 @@ export const acceptOrder = async (req: Request, res: Response): Promise<void> =>
       .select('id, status')
       .eq('id', id)
       .eq('restaurant_id', application.id)
-      .eq('status', 'PENDING')
+      .eq('status', 'PENDING_RESTAURANT_APPROVAL')
       .maybeSingle();
 
     if (!order) {
@@ -228,7 +228,7 @@ export const rejectOrder = async (req: Request, res: Response): Promise<void> =>
       .select('id, status')
       .eq('id', id)
       .eq('restaurant_id', application.id)
-      .eq('status', 'PENDING')
+      .eq('status', 'PENDING_RESTAURANT_APPROVAL')
       .maybeSingle();
 
     if (!order) {
@@ -239,7 +239,7 @@ export const rejectOrder = async (req: Request, res: Response): Promise<void> =>
     const { data: updated, error } = await supabase.admin
       .from('orders')
       .update({
-        status: 'REJECTED',
+        status: 'REJECTED_BY_RESTAURANT',
         rejection_reason: reason || null,
         cancelled_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -349,7 +349,7 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
     const { data: updated, error } = await supabase.admin
       .from('orders')
       .update({
-        status: 'READY',
+        status: 'READY_FOR_PICKUP',
         ready_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -370,6 +370,116 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
     });
   } catch (error) {
     console.error('Mark as ready error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/orders/:id/picked-up
+// Mark an order as out for delivery (picked up by delivery boy)
+// ──────────────────────────────────────────────
+export const markAsPickedUp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const { data: application } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (!application) {
+      res.status(404).json({ error: 'No approved restaurant found.' });
+      return;
+    }
+
+    const { data: updated, error } = await supabase.admin
+      .from('orders')
+      .update({
+        status: 'PICKED_UP',
+        picked_up_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('restaurant_id', application.id)
+      .in('status', ['READY_FOR_PICKUP'])
+      .select()
+      .single();
+
+    if (error || !updated) {
+      res.status(404).json({ error: 'Order not found or cannot be marked as picked up.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Order is out for delivery!',
+      order: updated,
+    });
+  } catch (error) {
+    console.error('Mark as picked up error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/orders/:id/delivered
+// Mark an order as delivered
+// ──────────────────────────────────────────────
+export const markAsDelivered = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const { data: application } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (!application) {
+      res.status(404).json({ error: 'No approved restaurant found.' });
+      return;
+    }
+
+    const { data: updated, error } = await supabase.admin
+      .from('orders')
+      .update({
+        status: 'DELIVERED',
+        delivered_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('restaurant_id', application.id)
+      .in('status', ['PICKED_UP', 'READY_FOR_PICKUP'])
+      .select()
+      .single();
+
+    if (error || !updated) {
+      res.status(404).json({ error: 'Order not found or cannot be marked as delivered.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Order delivered successfully!',
+      order: updated,
+    });
+  } catch (error) {
+    console.error('Mark as delivered error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -442,7 +552,7 @@ export const assignDeliveryBoy = async (req: Request, res: Response): Promise<vo
       })
       .eq('id', id)
       .eq('restaurant_id', application.id)
-      .in('status', ['READY', 'PREPARING'])
+      .in('status', ['READY_FOR_PICKUP', 'PREPARING'])
       .select()
       .single();
 

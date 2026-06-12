@@ -1,22 +1,42 @@
 /// Status of an order throughout its lifecycle
 enum OrderStatus {
-  pending('PENDING'),
+  pending('PENDING_RESTAURANT_APPROVAL'),
   accepted('ACCEPTED'),
   preparing('PREPARING'),
-  ready('READY'),
+  ready('READY_FOR_PICKUP'),
   pickedUp('PICKED_UP'),
   delivered('DELIVERED'),
   cancelled('CANCELLED'),
-  rejected('REJECTED');
+  rejected('REJECTED_BY_RESTAURANT');
 
   final String value;
   const OrderStatus(this.value);
 
   static OrderStatus fromString(String s) {
-    return OrderStatus.values.firstWhere(
-      (e) => e.value == s,
-      orElse: () => OrderStatus.pending,
-    );
+    // Map old DB values to new enum values for backward compatibility
+    switch (s) {
+      case 'PENDING':
+      case 'PENDING_RESTAURANT_APPROVAL':
+        return OrderStatus.pending;
+      case 'ACCEPTED':
+        return OrderStatus.accepted;
+      case 'PREPARING':
+        return OrderStatus.preparing;
+      case 'READY':
+      case 'READY_FOR_PICKUP':
+        return OrderStatus.ready;
+      case 'PICKED_UP':
+        return OrderStatus.pickedUp;
+      case 'DELIVERED':
+        return OrderStatus.delivered;
+      case 'CANCELLED':
+        return OrderStatus.cancelled;
+      case 'REJECTED':
+      case 'REJECTED_BY_RESTAURANT':
+        return OrderStatus.rejected;
+      default:
+        return OrderStatus.pending;
+    }
   }
 }
 

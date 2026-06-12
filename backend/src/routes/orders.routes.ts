@@ -6,6 +6,8 @@ import {
   rejectOrder,
   markAsPreparing,
   markAsReady,
+  markAsPickedUp,
+  markAsDelivered,
   getDeliveryBoys,
   assignDeliveryBoy,
 } from '../controllers/orders.controller';
@@ -22,6 +24,8 @@ router.patch('/:id/accept', acceptOrder);
 router.patch('/:id/reject', rejectOrder);
 router.patch('/:id/preparing', markAsPreparing);
 router.patch('/:id/ready', markAsReady);
+router.patch('/:id/picked-up', markAsPickedUp);
+router.patch('/:id/delivered', markAsDelivered);
 router.patch('/:id/assign', assignDeliveryBoy);
 
 export default router;
