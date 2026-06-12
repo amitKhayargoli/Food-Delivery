@@ -179,23 +179,11 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
     let { data: user } = await supabase.admin
       .from('users')
       .select('*')
-      .or(`google_id.eq.${google_id},email.eq.${email}`)
+      .eq('email', email)
       .limit(1)
       .maybeSingle();
 
     if (user) {
-      // Link google_id if not set
-      if (!user.google_id) {
-        const { data: updated } = await supabase.admin
-          .from('users')
-          .update({ google_id })
-          .eq('id', user.id)
-          .select('*')
-          .single();
-
-        if (updated) user = updated;
-      }
-
       // If user has a real phone (not TEMP_), they're fully registered
       if (user.phone && !user.phone.startsWith('TEMP_')) {
         const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
@@ -221,32 +209,49 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // New user — create placeholder
+    // New user — check if Supabase Auth user already exists
     const tempPhone = `TEMP_${google_id}`;
     const tempUsername = `user_${google_id.substring(0, 8)}`;
 
-    // Create auth user in supabase.auth.users first
-    const tempPassword = randomBytes(8).toString('hex');
-    const { data: authData, error: authError } = await supabase.admin.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      password: tempPassword,
-      user_metadata: { name, username: tempUsername },
-    });
+    // Check if Auth user with this email already exists in auth.users
+    // (user may exist in auth.users but not in the public users table)
+    let authUserId = '';
+    let isExistingAuthUser = false;
+    try {
+      const { data: existingAuthUsers } = await supabase.admin.auth.admin.listUsers({ perPage: 10000 });
+      const matched = existingAuthUsers?.users?.find(u => u.email === email);
+      if (matched) {
+        authUserId = matched.id;
+        isExistingAuthUser = true;
+      }
+    } catch (err) {
+      console.warn('listUsers({ perPage: 10000 }) failed, falling back to createUser', err);
+    }
 
-    if (authError || !authData.user) {
-      console.error('Supabase auth user create error:', authError);
-      res.status(500).json({ error: 'Failed to create user' });
-      return;
+    if (!authUserId) {
+      // Create auth user in supabase.auth.users
+      const tempPassword = randomBytes(8).toString('hex');
+      const { data: authData, error: authError } = await supabase.admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        password: tempPassword,
+        user_metadata: { name, username: tempUsername },
+      });
+
+      if (authError || !authData.user) {
+        console.error('Supabase auth user create error:', authError);
+        res.status(500).json({ error: 'Failed to create user' });
+        return;
+      }
+      authUserId = authData.user.id;
     }
 
     // Upsert into public users table using the auth user's ID
     const { error: insertError } = await supabase.admin
       .from('users')
       .upsert({
-        id: authData.user.id,
+        id: authUserId,
         email,
-        google_id,
         phone: tempPhone,
         username: tempUsername,
       }, { onConflict: 'id' })
@@ -255,7 +260,9 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 
     if (insertError) {
       console.error('Supabase upsert error:', insertError);
-      await supabase.admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      if (!isExistingAuthUser) {
+        await supabase.admin.auth.admin.deleteUser(authUserId).catch(() => {});
+      }
       res.status(500).json({ error: 'Failed to create user' });
       return;
     }
