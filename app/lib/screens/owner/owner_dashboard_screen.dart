@@ -5,6 +5,7 @@ import '../../core/services/api_service.dart';
 import '../../widgets/toggle_switch.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import 'manage_restaurant_screen.dart';
 import 'order_detail_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
@@ -19,12 +20,14 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   bool _isLoading = true;
   String? _error;
   bool _isAcceptingOrders = true;
+  bool _isToggling = false;
   int _selectedTab = 0;
 
   @override
   void initState() {
     super.initState();
     _fetchOrders();
+    _fetchAcceptingStatus();
   }
 
   // ── Derived data ────────────────────────────
@@ -57,6 +60,65 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       case 3: return _outForDeliveryOrders;
       case 4: return _deliveredOrders;
       default: return _newOrders;
+    }
+  }
+
+  // ── Accepting orders status ──────────────────
+
+  Future<void> _fetchAcceptingStatus() async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final profile = await api.getMyRestaurantProfile(token: token);
+      if (profile != null && mounted) {
+        setState(() {
+          _isAcceptingOrders = profile['is_accepting_orders'] as bool? ?? true;
+        });
+      }
+    } catch (_) {
+      // Silently fail — default to accepting
+    }
+  }
+
+  Future<void> _toggleAcceptingOrders(bool value) async {
+    final token = _token;
+    if (token == null || _isToggling) return;
+
+    // Optimistic update
+    setState(() {
+      _isAcceptingOrders = value;
+      _isToggling = true;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.toggleAcceptingOrders(isAccepting: value, token: token);
+    } on ApiException catch (e) {
+      // Revert on failure
+      if (mounted) {
+        setState(() {
+          _isAcceptingOrders = !value;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isAcceptingOrders = !value;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isToggling = false);
+      }
     }
   }
 
@@ -341,7 +403,29 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           const SizedBox(width: 8),
           ToggleSwitch(
             value: _isAcceptingOrders,
-            onChanged: (v) => setState(() => _isAcceptingOrders = v),
+            onChanged: _isToggling ? (_) {} : _toggleAcceptingOrders,
+          ),
+          const SizedBox(width: 12),
+          // Manage Restaurant button
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ManageRestaurantScreen(),
+              ),
+            ),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFEDED),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.settings_rounded,
+                size: 20,
+                color: Color(0xFF5E3F3C),
+              ),
+            ),
           ),
         ],
       ),
@@ -417,7 +501,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             final isActive = _selectedTab == index;
 
             return GestureDetector(
-              onTap: () => setState(() => _selectedTab = index),
+              onTap: () {
+                setState(() => _selectedTab = index);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -510,28 +596,28 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   children: [
                     Icon(
                       _selectedTab == 0
-                      ? Icons.inbox_rounded
-                      : _selectedTab == 1
-                          ? Icons.kitchen_rounded
-                          : _selectedTab == 2
-                              ? Icons.check_circle_outline_rounded
-                              : _selectedTab == 3
-                                  ? Icons.delivery_dining_rounded
-                                  : Icons.task_alt_rounded,
+                          ? Icons.inbox_rounded
+                          : _selectedTab == 1
+                              ? Icons.kitchen_rounded
+                              : _selectedTab == 2
+                                  ? Icons.check_circle_outline_rounded
+                                  : _selectedTab == 3
+                                      ? Icons.delivery_dining_rounded
+                                      : Icons.task_alt_rounded,
                       size: 48,
                       color: const Color(0xFFD9D9D9),
                     ),
                     const SizedBox(height: 12),
                     Text(
                       _selectedTab == 0
-                      ? 'No new orders yet'
-                      : _selectedTab == 1
-                          ? 'No orders in preparation'
-                          : _selectedTab == 2
-                              ? 'No ready orders'
-                              : _selectedTab == 3
-                                  ? 'No orders out for delivery'
-                                  : 'No delivered orders',
+                          ? 'No new orders yet'
+                          : _selectedTab == 1
+                              ? 'No orders in preparation'
+                              : _selectedTab == 2
+                                  ? 'No ready orders'
+                                  : _selectedTab == 3
+                                      ? 'No orders out for delivery'
+                                      : 'No delivered orders',
                       style: const TextStyle(
                         color: Color(0xFF8E8E93),
                         fontSize: 15,
@@ -1076,4 +1162,4 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       default:
         return const SizedBox.shrink();
     }
-  }
+  }}

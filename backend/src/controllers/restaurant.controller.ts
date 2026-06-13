@@ -23,6 +23,183 @@ function getUserId(req: Request): string | null {
 }
 
 // ──────────────────────────────────────────────
+// GET /api/restaurant-applications/my/profile
+// Get the approved restaurant profile for the current owner
+// ──────────────────────────────────────────────
+export const getMyRestaurantProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { data: profile, error } = await supabase.admin
+      .from('restaurant_applications')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Fetch restaurant profile error:', error);
+      res.status(500).json({ error: 'Failed to fetch restaurant profile.' });
+      return;
+    }
+
+    if (!profile) {
+      res.status(404).json({ error: 'No approved restaurant found for this account.' });
+      return;
+    }
+
+    res.status(200).json({ restaurant: profile });
+  } catch (error) {
+    console.error('Get restaurant profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PUT /api/restaurant-applications/my/profile
+// Update the approved restaurant's profile
+// ──────────────────────────────────────────────
+export const updateRestaurantProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const {
+      restaurant_name,
+      description,
+      address,
+      cuisine_type,
+      logo_url,
+      cover_image_url,
+      open_time,
+      close_time,
+      phone,
+      email,
+    } = req.body;
+
+    // Check that user has an approved application
+    const { data: existing, error: fetchError } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchError || !existing) {
+      res.status(404).json({ error: 'No approved restaurant found for this account.' });
+      return;
+    }
+
+    // Build update object — only include provided fields
+    const updates: Record<string, any> = {};
+    if (restaurant_name !== undefined) updates.restaurant_name = restaurant_name;
+    if (description !== undefined) updates.description = description;
+    if (address !== undefined) updates.address = address;
+    if (cuisine_type !== undefined) updates.cuisine_type = cuisine_type;
+    if (logo_url !== undefined) updates.logo_url = logo_url;
+    if (cover_image_url !== undefined) updates.cover_image_url = cover_image_url;
+    if (open_time !== undefined) updates.open_time = open_time;
+    if (close_time !== undefined) updates.close_time = close_time;
+    if (phone !== undefined) updates.phone = phone;
+    if (email !== undefined) updates.email = email;
+    updates.updated_at = new Date().toISOString();
+
+    if (Object.keys(updates).length <= 1) {
+      res.status(400).json({ error: 'No fields provided to update.' });
+      return;
+    }
+
+    const { data: updated, error: updateError } = await supabase.admin
+      .from('restaurant_applications')
+      .update(updates)
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+
+    if (updateError) {
+      console.error('Update restaurant profile error:', updateError);
+      res.status(500).json({ error: 'Failed to update restaurant profile.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Restaurant profile updated successfully.',
+      restaurant: updated,
+    });
+  } catch (error) {
+    console.error('Update restaurant profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/restaurant-applications/my/accepting-orders
+// Toggle whether the restaurant is accepting orders
+// ──────────────────────────────────────────────
+export const toggleAcceptingOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { is_accepting_orders } = req.body;
+
+    if (typeof is_accepting_orders !== 'boolean') {
+      res.status(400).json({ error: 'is_accepting_orders must be a boolean.' });
+      return;
+    }
+
+    const { data: existing, error: fetchError } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchError || !existing) {
+      res.status(404).json({ error: 'No approved restaurant found for this account.' });
+      return;
+    }
+
+    const { data: updated, error: updateError } = await supabase.admin
+      .from('restaurant_applications')
+      .update({
+        is_accepting_orders,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+      .select('id, is_accepting_orders')
+      .single();
+
+    if (updateError) {
+      console.error('Toggle accepting orders error:', updateError);
+      res.status(500).json({ error: 'Failed to update accepting orders status.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: is_accepting_orders ? 'Now accepting orders.' : 'Orders paused.',
+      is_accepting_orders: updated.is_accepting_orders,
+    });
+  } catch (error) {
+    console.error('Toggle accepting orders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
 // POST /api/restaurant-applications
 // Submit a new restaurant owner application
 // ──────────────────────────────────────────────

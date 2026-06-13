@@ -61,6 +61,41 @@ class StorageService {
     return _uploadToBucket(_foodImagesBucket, filePath, token);
   }
 
+  /// Upload a file to a given bucket with a subfolder path.
+  /// [bucket] — the Supabase storage bucket name.
+  /// [folder] — optional subfolder within the bucket (e.g. 'logos', 'covers').
+  Future<String> uploadFile({
+    required String filePath,
+    required String bucket,
+    String? folder,
+    required String userId,
+    required String token,
+  }) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('File not found: $filePath');
+    }
+
+    final fileName = filePath.split('/').last;
+    final remotePath = folder != null ? '$folder/$fileName' : fileName;
+    final formData = FormData.fromMap({
+      'bucket': bucket,
+      'path': remotePath,
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+    });
+
+    final response = await _dio.post(
+      '/upload',
+      data: formData,
+      options: Options(
+        headers: {'Authorization': 'Bearer $token'},
+      ),
+    );
+
+    final data = response.data as Map<String, dynamic>;
+    return data['url'] as String;
+  }
+
   /// Generic upload to any allowed bucket.
   Future<String> _uploadToBucket(
     String bucket,

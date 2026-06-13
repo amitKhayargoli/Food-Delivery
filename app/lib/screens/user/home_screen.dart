@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
 import 'restaurant_menu_screen.dart';
 import 'delivery_address_map_screen.dart';
 import 'selected_delivery_location.dart';
@@ -16,65 +17,128 @@ class UserHomeScreen extends StatefulWidget {
 
 class _UserHomeScreenState extends State<UserHomeScreen> {
   String _currentAddress = 'Jhamsikhel, Lalitpur';
+  List<Restaurant> _restaurants = [];
+  bool _isLoading = true;
+  String? _error;
 
-  // Discount offers mapped by restaurant ID
-  static const Map<String, String> _restaurantDiscounts = {
-    'r1': 'Flat 30% OFF',
-    'r2': 'Flat 10% OFF',
-    'r3': 'Flat 20% OFF',
-  };
+  @override
+  void initState() {
+    super.initState();
+    _fetchRestaurants();
+  }
 
-  static const List<Map<String, dynamic>> _topPicks = [
-    {'name': 'Thai Delight', 'rating': 4.6, 'time': '28 mins', 'discount': 'Flat 25% OFF'},
-    {'name': 'Pasta Palace', 'rating': 4.5, 'time': '30 mins', 'discount': 'Flat 20% OFF'},
-    {'name': 'Noodle Bar', 'rating': 4.4, 'time': '22 mins', 'discount': 'Flat 30% OFF'},
-  ];
+  Future<void> _fetchRestaurants() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
-  // Map top picks to actual restaurants
-  List<Restaurant> _getTopPickRestaurants() {
-    return mockRestaurants.take(_topPicks.length).toList();
+    try {
+      final api = di.sl<ApiService>();
+      final raw = await api.getRestaurants();
+      setState(() {
+        _restaurants = raw.map((r) => Restaurant.fromJson(r)).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load restaurants. Pull down to retry.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Top picks = restaurants with highest ratings
+  List<Restaurant> get _topPicks {
+    final sorted = List<Restaurant>.from(_restaurants);
+    sorted.sort((a, b) => b.rating.compareTo(a.rating));
+    return sorted.take(3).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final topPickRestaurants = _getTopPickRestaurants();
-
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Location Header ──
-              _buildLocationHeader(context),
-
-              // ── Promo Banner ──
-              _buildPromoBanner(context),
-
-              // ── New Near You Section ──
-              _buildSectionHeader(context, 'New Near You', onSeeAll: () {}),
-              _buildRestaurantHorizontalList(
-                context,
-                restaurants: mockRestaurants,
-                discounts: _restaurantDiscounts,
-              ),
-
-              // ── Top Picks For You Section ──
-              _buildSectionHeader(context, 'Top Picks For You', onSeeAll: () {}),
-              _buildRestaurantHorizontalList(
-                context,
-                restaurants: topPickRestaurants,
-                discounts: {
-                  for (int i = 0; i < topPickRestaurants.length; i++)
-                    topPickRestaurants[i].id: _topPicks[i]['discount'] as String,
-                },
-              ),
-
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
+        child: _isLoading
+            ? const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFFF5222D)),
+                    SizedBox(height: 16),
+                    Text(
+                      'Loading restaurants...',
+                      style: TextStyle(color: Color(0xFF8C8C8C), fontSize: 14),
+                    ),
+                  ],
+                ),
+              )
+            : _error != null
+                ? RefreshIndicator(
+                    onRefresh: _fetchRestaurants,
+                    color: const Color(0xFFF5222D),
+                    child: ListView(
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.cloud_off_rounded,
+                                    size: 48, color: Color(0xFFD9D9D9)),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF8C8C8C),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: _fetchRestaurants,
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text('Retry'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF5222D),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _fetchRestaurants,
+                    color: const Color(0xFFF5222D),
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildLocationHeader(context),
+                          _buildPromoBanner(context),
+                          _buildSectionHeader(context, 'New Near You', onSeeAll: () {}),
+                          _buildRestaurantHorizontalList(
+                            context,
+                            restaurants: _restaurants,
+                          ),
+                          _buildSectionHeader(context, 'Top Picks For You', onSeeAll: () {}),
+                          _buildRestaurantHorizontalList(
+                            context,
+                            restaurants: _topPicks,
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                  ),
       ),
     );
   }
@@ -293,8 +357,8 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
   Widget _buildRestaurantHorizontalList(
     BuildContext context, {
     required List<Restaurant> restaurants,
-    required Map<String, String> discounts,
   }) {
+    if (restaurants.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: 230,
       child: ListView.separated(
@@ -304,11 +368,9 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
         separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final restaurant = restaurants[index];
-          final discount = discounts[restaurant.id];
           return _buildRestaurantCard(
             context,
             restaurant: restaurant,
-            discount: discount,
           );
         },
       ),
@@ -322,7 +384,6 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
   Widget _buildRestaurantCard(
     BuildContext context, {
     required Restaurant restaurant,
-    String? discount,
   }) {
     return GestureDetector(
       onTap: () {
@@ -367,31 +428,30 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                     ),
                   ),
                 ),
-                if (discount != null)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                Positioned(
+                  left: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFF5222D),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      decoration: ShapeDecoration(
-                        color: const Color(0xFFF5222D),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      child: Text(
-                        discount,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    ),
+                    child: Text(
+                      '${restaurant.deliveryTimeMinutes} mins',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
+                ),
                 // Favorite button
                 Positioned(
                   right: 6,

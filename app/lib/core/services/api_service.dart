@@ -498,6 +498,105 @@ class ApiService {
     }
   }
 
+  // ──────────────────────────────────────────────
+  //  Restaurant Profile API (Owner Manage Restaurant)
+  // ──────────────────────────────────────────────
+
+  /// Fetch the current owner's approved restaurant profile
+  Future<Map<String, dynamic>?> getMyRestaurantProfile({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/restaurant-applications/my/profile',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['restaurant'] as Map<String, dynamic>?;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Update the owner's restaurant profile
+  Future<Map<String, dynamic>> updateRestaurantProfile({
+    required Map<String, dynamic> data,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/restaurant-applications/my/profile',
+        data: data,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final result = response.data as Map<String, dynamic>;
+      return result['restaurant'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Toggle whether the restaurant is accepting orders
+  Future<bool> toggleAcceptingOrders({
+    required bool isAccepting,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/restaurant-applications/my/accepting-orders',
+        data: {'is_accepting_orders': isAccepting},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['is_accepting_orders'] as bool? ?? isAccepting;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Public Restaurants API
+  // ──────────────────────────────────────────────
+
+  /// Fetch all approved restaurants (public, no auth needed)
+  Future<List<Map<String, dynamic>>> getRestaurants() async {
+    try {
+      final response = await _dio.get('/restaurants');
+      final data = response.data as Map<String, dynamic>;
+      final restaurants = data['restaurants'] as List<dynamic>? ?? [];
+      return restaurants.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch menu items for a specific restaurant (public, no auth needed)
+  Future<List<Map<String, dynamic>>> getRestaurantMenu(String restaurantId) async {
+    try {
+      final response = await _dio.get('/restaurants/$restaurantId/menu');
+      final data = response.data as Map<String, dynamic>;
+      final items = data['items'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch a single restaurant by ID (public, no auth needed)
+  Future<Map<String, dynamic>?> getRestaurantById(String restaurantId) async {
+    try {
+      final response = await _dio.get('/restaurants/$restaurantId');
+      final data = response.data as Map<String, dynamic>;
+      return data['restaurant'] as Map<String, dynamic>?;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Extract error message from DioException
   String _extractError(DioException e) {
     if (e.response?.data is Map<String, dynamic>) {
