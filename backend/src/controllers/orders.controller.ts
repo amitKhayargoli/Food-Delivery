@@ -375,7 +375,125 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
 };
 
 // ──────────────────────────────────────────────
-// GET /api/delivery-boys
+// GET /api/orders/my
+// Get orders for the authenticated user (customer)
+// ──────────────────────────────────────────────
+export const getMyOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { data: orders, error } = await supabase.admin
+      .from('orders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch my orders error:', error);
+      res.status(500).json({ error: 'Failed to fetch orders.' });
+      return;
+    }
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    console.error('Get my orders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET /api/orders/search?q=<order_number>
+// Search orders by order number for the owner's restaurant
+// ──────────────────────────────────────────────
+export const searchOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const query = (req.query.q as string || '').trim();
+    if (!query) {
+      res.status(400).json({ error: 'Search query "q" is required.' });
+      return;
+    }
+
+    // Get the owner's restaurant application ID
+    const { data: application } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .limit(1)
+      .maybeSingle();
+
+    if (!application) {
+      res.status(404).json({ error: 'No approved restaurant found for this user.' });
+      return;
+    }
+
+    const restaurantId = application.id;
+
+    const { data: orders, error } = await supabase.admin
+      .from('orders')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .ilike('order_number', `%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error('Search orders error:', error);
+      res.status(500).json({ error: 'Failed to search orders.' });
+      return;
+    }
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    console.error('Search orders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET /api/orders/delivery/my
+// Get assigned orders for the authenticated delivery boy
+// ──────────────────────────────────────────────
+export const getMyDeliveryJobs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { data: orders, error } = await supabase.admin
+      .from('orders')
+      .select('*')
+      .eq('delivery_boy_id', userId)
+      .not('status', 'in', '(DELIVERED,CANCELLED,REJECTED)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch delivery jobs error:', error);
+      res.status(500).json({ error: 'Failed to fetch delivery jobs.' });
+      return;
+    }
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    console.error('Get delivery jobs error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET /api/orders/delivery-boys
 // Get all available delivery boys
 // ──────────────────────────────────────────────
 export const getDeliveryBoys = async (_req: Request, res: Response): Promise<void> => {
@@ -395,6 +513,48 @@ export const getDeliveryBoys = async (_req: Request, res: Response): Promise<voi
     res.status(200).json({ delivery_boys: drivers });
   } catch (error) {
     console.error('Get delivery boys error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/orders/:id/picked-up
+// Mark an order as picked up (by delivery boy)
+// ──────────────────────────────────────────────
+export const markAsPickedUp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const { data: updated, error } = await supabase.admin
+      .from('orders')
+      .update({
+        status: 'PICKED_UP',
+        picked_up_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('delivery_boy_id', userId)
+      .in('status', ['READY'])
+      .select()
+      .single();
+
+    if (error || !updated) {
+      res.status(404).json({ error: 'Order not found or cannot be picked up.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Order picked up successfully.',
+      order: updated,
+    });
+  } catch (error) {
+    console.error('Mark as picked up error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
