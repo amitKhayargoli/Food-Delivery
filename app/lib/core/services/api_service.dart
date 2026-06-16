@@ -424,6 +424,77 @@ class ApiService {
     }
   }
 
+  // ──────────────────────────────────────────────
+  //  Customer Orders API
+  // ──────────────────────────────────────────────
+
+  /// Fetch orders for the authenticated customer
+  Future<List<Map<String, dynamic>>> getMyOrders({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/orders/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final orders = data['orders'] as List<dynamic>? ?? [];
+      return orders.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Search orders by order number (owner-facing)
+  Future<List<Map<String, dynamic>>> searchOrders({required String query, required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/orders/search',
+        queryParameters: {'q': query},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final orders = data['orders'] as List<dynamic>? ?? [];
+      return orders.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch assigned delivery jobs for the authenticated delivery boy
+  Future<List<Map<String, dynamic>>> getMyDeliveryJobs({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/orders/delivery/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final orders = data['orders'] as List<dynamic>? ?? [];
+      return orders.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Mark an order as picked up
+  Future<Map<String, dynamic>> markOrderAsPickedUp({
+    required String orderId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/orders/$orderId/picked-up',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['order'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Assign a delivery boy to an order
   Future<Map<String, dynamic>> assignDeliveryBoy({
     required String orderId,
