@@ -10,6 +10,7 @@ import '../screens/user/profile_screen.dart';
 import '../screens/owner/owner_dashboard_screen.dart';
 import '../screens/owner/owner_menu_screen.dart';
 import '../screens/owner/owner_analytics_screen.dart';
+import '../screens/user/active_orders_screen.dart';
 import '../screens/delivery/delivery_jobs_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 
@@ -71,7 +72,7 @@ class _AppNavigationState extends State<AppNavigation> {
   List<Widget> get _userScreens => [
     const UserHomeScreen(),
     const SearchScreen(),
-    const Center(child: Text('Your Orders')),
+    const ActiveOrdersScreen(),
     const CartScreen(),
     const ProfileScreen(),
   ];

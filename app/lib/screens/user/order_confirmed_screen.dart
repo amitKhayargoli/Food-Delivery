@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'active_orders_screen.dart';
 
 class OrderConfirmedScreen extends StatefulWidget {
   final String paymentMethod;
@@ -409,11 +410,10 @@ class _OrderConfirmedScreenState extends State<OrderConfirmedScreen>
                     height: 52,
                     child: ElevatedButton(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Track Order coming soon'),
-                            behavior: SnackBarBehavior.floating,
-                            duration: Duration(seconds: 2),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ActiveOrdersScreen(),
                           ),
                         );
                       },
