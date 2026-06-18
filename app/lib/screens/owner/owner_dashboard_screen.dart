@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/supabase_client_service.dart';
 import '../../widgets/toggle_switch.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import '../user/order_detail_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
@@ -15,15 +19,70 @@ class OwnerDashboardScreen extends StatefulWidget {
 
 class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   List<Order> _allOrders = [];
+  List<Order> _searchResults = [];
   bool _isLoading = true;
   String? _error;
   bool _isAcceptingOrders = true;
   int _selectedTab = 0;
+  final TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
+  String? _searchError;
+  Timer? _searchDebounce;
+  sb.RealtimeChannel? _orderChannel;
 
   @override
   void initState() {
     super.initState();
     _fetchOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    _unsubscribeFromOrders();
+    super.dispose();
+  }
+
+  void _subscribeToOrders(String restaurantId) {
+    _unsubscribeFromOrders();
+    _orderChannel = SupabaseClientService.client.channel('owner-orders-$restaurantId');
+
+    _orderChannel!.onPostgresChanges(
+      event: sb.PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'orders',
+      callback: (payload) {
+        final record = payload.newRecord;
+        if (record['restaurant_id']?.toString() == restaurantId) {
+          _fetchOrders();
+        }
+      },
+    );
+
+    _orderChannel!.onPostgresChanges(
+      event: sb.PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'orders',
+      callback: (payload) {
+        final record = payload.newRecord;
+        if (record['restaurant_id']?.toString() == restaurantId) {
+          _fetchOrders();
+        }
+      },
+    );
+
+    _orderChannel!.subscribe((status, [error]) {
+      debugPrint('[RT-OwnerOrders] Channel status: $status');
+      if (error != null) debugPrint('[RT-OwnerOrders] Error: $error');
+    });
+  }
+
+  void _unsubscribeFromOrders() {
+    if (_orderChannel != null) {
+      SupabaseClientService.client.removeChannel(_orderChannel!);
+      _orderChannel = null;
+    }
   }
 
   // ── Derived data ────────────────────────────
@@ -43,6 +102,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       _allOrders.where((o) => o.status == OrderStatus.ready).toList();
 
   List<Order> get _currentOrders {
+    if (_isSearching) return _searchResults;
     switch (_selectedTab) {
       case 0: return _newOrders;
       case 1: return _preparingOrders;
@@ -75,16 +135,44 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         _allOrders = rawOrders.map((o) => Order.fromJson(o)).toList();
         _isLoading = false;
       });
+
+      // Subscribe to real-time updates — get restaurantId from orders or fallback to DB query
+      if (_allOrders.isNotEmpty) {
+        _subscribeToOrders(_allOrders.first.restaurantId);
+      } else {
+        _subscribeWithRestaurantIdFallback();
+      }
     } on ApiException catch (e) {
       setState(() {
         _error = e.message;
         _isLoading = false;
       });
+      // Still try to subscribe even on error, using DB fallback
+      _subscribeWithRestaurantIdFallback();
     } catch (e) {
       setState(() {
         _error = 'Failed to load orders. Check your connection.';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Look up the restaurant ID from restaurant_applications and subscribe.
+  Future<void> _subscribeWithRestaurantIdFallback() async {
+    final userId = SupabaseClientService.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final data = await SupabaseClientService.client
+          .from('restaurant_applications')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (data != null && data['id'] != null && mounted) {
+        _subscribeToOrders(data['id'] as String);
+      }
+    } catch (_) {
+      // Silently fail — user can pull-to-refresh
     }
   }
 
@@ -223,6 +311,52 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     return 'Rs. ${amount.toStringAsFixed(0)}';
   }
 
+  // ── Search ───────────────────────────────────
+
+  Future<void> _performSearch(String query) async {
+    final token = _token;
+    if (token == null || query.trim().isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _searchResults = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _searchError = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final rawOrders = await api.searchOrders(query: query.trim(), token: token);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = rawOrders.map((o) => Order.fromJson(o)).toList();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchError = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchError = 'Search failed.';
+      });
+    }
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _isSearching = false;
+      _searchResults = [];
+      _searchError = null;
+    });
+  }
+
   // ── Build ────────────────────────────────────
 
   @override
@@ -233,10 +367,58 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         child: Column(
           children: [
             _buildHeader(),
-            _buildTabChips(),
+            _buildSearchBar(),
+            if (!_isSearching) _buildTabChips(),
             Expanded(child: _buildBody()),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Search bar ───────────────────────────────
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _searchController,
+        onSubmitted: (value) => _performSearch(value),
+        onChanged: (value) {
+          _searchDebounce?.cancel();
+          if (value.isEmpty && _isSearching) {
+            _clearSearch();
+            return;
+          } else if (value.isEmpty) {
+            return;
+          }
+          _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+            _performSearch(value);
+          });
+        },
+        decoration: InputDecoration(
+          hintText: 'Search by order #...',
+          hintStyle: const TextStyle(color: Color(0xFF999999), fontSize: 14),
+          prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF999999)),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF999999)),
+                  onPressed: _clearSearch,
+                )
+              : null,
+          filled: true,
+          fillColor: const Color(0xFFF0F0F0),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFBB0018), width: 1.5),
+          ),
+        ),
+        style: const TextStyle(fontSize: 14),
       ),
     );
   }
@@ -427,7 +609,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
     if (_currentOrders.isEmpty) {
       return RefreshIndicator(
-        onRefresh: _fetchOrders,
+        onRefresh: _isSearching ? () async {} : _fetchOrders,
         color: const Color(0xFFBB0018),
         child: ListView(
           children: [
@@ -437,36 +619,64 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      _selectedTab == 0
-                          ? Icons.inbox_rounded
-                          : _selectedTab == 1
-                              ? Icons.kitchen_rounded
-                              : Icons.check_circle_outline_rounded,
-                      size: 48,
-                      color: const Color(0xFFD9D9D9),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _selectedTab == 0
-                          ? 'No new orders yet'
-                          : _selectedTab == 1
-                              ? 'No orders in preparation'
-                              : 'No ready orders',
-                      style: const TextStyle(
-                        color: Color(0xFF8E8E93),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                    if (_isSearching) ...[
+                      const Icon(Icons.search_off_rounded,
+                          size: 48, color: Color(0xFFD9D9D9)),
+                      const SizedBox(height: 12),
+                      Text(
+                        _searchError ??
+                            'No orders found for "${_searchController.text}"',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF8E8E93),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Pull down to refresh',
-                      style: TextStyle(
-                        color: Color(0xFFBFBFBF),
-                        fontSize: 12,
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: _clearSearch,
+                        child: const Text(
+                          'Clear search',
+                          style: TextStyle(
+                            color: Color(0xFFBB0018),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      Icon(
+                        _selectedTab == 0
+                            ? Icons.inbox_rounded
+                            : _selectedTab == 1
+                                ? Icons.kitchen_rounded
+                                : Icons.check_circle_outline_rounded,
+                        size: 48,
+                        color: const Color(0xFFD9D9D9),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _selectedTab == 0
+                            ? 'No new orders yet'
+                            : _selectedTab == 1
+                                ? 'No orders in preparation'
+                                : 'No ready orders',
+                        style: const TextStyle(
+                          color: Color(0xFF8E8E93),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Pull down to refresh',
+                        style: TextStyle(
+                          color: Color(0xFFBFBFBF),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -490,7 +700,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   // ── Order card ───────────────────────────────
 
   Widget _buildOrderCard(Order order) {
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrderDetailScreen(
+              order: order,
+              isOwner: true,
+            ),
+          ),
+        );
+      },
+      child: Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -715,6 +937,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           _buildActionButtons(order),
         ],
       ),
+    ),
     );
   }
 

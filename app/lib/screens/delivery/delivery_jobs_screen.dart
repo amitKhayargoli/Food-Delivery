@@ -1,50 +1,290 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
+import '../../models/order.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/supabase_client_service.dart';
+import '../../injection_container.dart' as di;
+import '../../providers/auth_provider.dart';
 
-class DeliveryJobsScreen extends StatelessWidget {
+class DeliveryJobsScreen extends StatefulWidget {
   const DeliveryJobsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  State<DeliveryJobsScreen> createState() => _DeliveryJobsScreenState();
+}
 
+class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
+  List<Order> _jobs = [];
+  bool _isLoading = true;
+  String? _error;
+  bool _isAccepting = false;
+  sb.RealtimeChannel? _orderChannel;
+
+  String? get _token => context.read<AuthProvider>().token;
+  String? get _userId => SupabaseClientService.client.auth.currentUser?.id;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchJobs();
+  }
+
+  @override
+  void dispose() {
+    _unsubscribeFromOrders();
+    super.dispose();
+  }
+
+  void _subscribeToOrders(String userId) {
+    _unsubscribeFromOrders();
+    _orderChannel = SupabaseClientService.client.channel('delivery-jobs-$userId');
+
+    _orderChannel!.onPostgresChanges(
+      event: sb.PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'orders',
+      callback: (payload) {
+        final record = payload.newRecord;
+        if (record['delivery_boy_id']?.toString() == userId) {
+          _fetchJobs();
+        }
+      },
+    );
+
+    _orderChannel!.onPostgresChanges(
+      event: sb.PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'orders',
+      callback: (payload) {
+        final record = payload.newRecord;
+        if (record['delivery_boy_id']?.toString() == userId) {
+          _fetchJobs();
+        }
+      },
+    );
+
+    _orderChannel!.subscribe((status, [error]) {
+      debugPrint('[RT-DeliveryJobs] Channel status: $status');
+      if (error != null) debugPrint('[RT-DeliveryJobs] Error: $error');
+    });
+  }
+
+  void _unsubscribeFromOrders() {
+    if (_orderChannel != null) {
+      SupabaseClientService.client.removeChannel(_orderChannel!);
+      _orderChannel = null;
+    }
+  }
+
+  Future<void> _fetchJobs() async {
+    final token = _token;
+    if (token == null) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = 'Not authenticated. Please log in.';
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final rawOrders = await api.getMyDeliveryJobs(token: token);
+      if (!mounted) return;
+      setState(() {
+        _jobs = rawOrders.map((o) => Order.fromJson(o)).toList();
+        _isLoading = false;
+      });
+      // Subscribe to real-time updates after successful fetch
+      final userId = _userId;
+      if (userId != null) _subscribeToOrders(userId);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load jobs. Check your connection.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _acceptJob(Order order) async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isAccepting = true);
+    try {
+      final api = di.sl<ApiService>();
+      await api.markOrderAsPickedUp(orderId: order.id, token: token);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Job accepted! Order picked up.'),
+            backgroundColor: Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _fetchJobs();
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
+    }
+  }
+
+  String _formatCurrency(double amount) {
+    return 'Rs. ${amount.toStringAsFixed(0)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: const Color(0xFFFAF9F9),
       appBar: AppBar(
-        title: const Text('Assigned Jobs'),
+        title: const Text(
+          'Assigned Jobs',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF1A1C1C),
+        elevation: 0.5,
       ),
-      body: ListView(
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text(
+              'Loading jobs...',
+              style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Color(0xFF8E8E93)),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _fetchJobs,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFBB0018),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_jobs.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _fetchJobs,
+        color: const Color(0xFFBB0018),
+        child: ListView(
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.5,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.moped_rounded,
+                        size: 56, color: Color(0xFFD9D9D9)),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No jobs assigned',
+                      style: TextStyle(
+                        color: Color(0xFF8E8E93),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'New delivery jobs will appear here',
+                      style: TextStyle(
+                        color: Color(0xFFBFBFBF),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchJobs,
+      color: const Color(0xFFBB0018),
+      child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        children: [
-          _buildJobCard(
-            context,
-            orderId: '#1025',
-            restaurantName: 'Burger Point',
-            customerAddress: 'Baneshwor, Kathmandu',
-            distance: '2.5 km',
-          ),
-          const SizedBox(height: 16),
-          _buildJobCard(
-            context,
-            orderId: '#1026',
-            restaurantName: 'Napoli Pizza',
-            customerAddress: 'Thamel, Kathmandu',
-            distance: '1.2 km',
-          ),
-        ],
+        itemCount: _jobs.length,
+        itemBuilder: (context, index) => _buildJobCard(_jobs[index]),
       ),
     );
   }
 
-  Widget _buildJobCard(
-    BuildContext context, {
-    required String orderId,
-    required String restaurantName,
-    required String customerAddress,
-    required String distance,
-  }) {
-    final theme = Theme.of(context);
+  Widget _buildJobCard(Order order) {
+    // Determine pickup (restaurant) and dropoff (customer) addresses
+    final pickupAddress = order.items.isNotEmpty
+        ? 'Restaurant'
+        : 'Pickup point';
+    final dropoffAddress = order.deliveryAddress?.fullAddress ?? 'Customer address';
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -63,83 +303,182 @@ class DeliveryJobsScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Order $orderId',
+              Row(
+                children: [
+                  const Icon(Icons.receipt_long_rounded,
+                      size: 18, color: Color(0xFFBB0018)),
+                  const SizedBox(width: 8),
+                  Text(
+                    '#${order.orderNumber}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                ],
+              ),
+              _buildStatusBadge(order.status),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Order items ──
+          ...order.items.take(2).map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${item.quantity}x ${item.name}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF5C5C5C),
+                  ),
+                ),
+              )),
+          if (order.items.length > 2)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '+${order.items.length - 2} more items',
                 style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A),
+                  color: Color(0xFFBFBFBF),
+                  fontSize: 12,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+            ),
+
+          const SizedBox(height: 12),
+
+          // ── Pickup ──
+          Row(
+            children: [
+              const Icon(Icons.store, color: Color(0xFF8E8E93), size: 20),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Text(
-                  distance,
-                  style: TextStyle(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                  'Pickup: $pickupAddress',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1A1A1A),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Icon(Icons.store, color: Color(0xFF8E8E93), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Pickup: $restaurantName',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 8),
+
+          // ── Dropoff ──
           Row(
             children: [
               const Icon(Icons.location_on, color: Color(0xFF8E8E93), size: 20),
               const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Dropoff: $dropoffAddress',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          // ── Total ──
+          Row(
+            children: [
+              const Icon(Icons.receipt_outlined, color: Color(0xFF8E8E93), size: 20),
+              const SizedBox(width: 8),
               Text(
-                'Dropoff: $customerAddress',
+                'Total: ${_formatCurrency(order.total)}',
                 style: const TextStyle(
                   fontSize: 14,
+                  fontWeight: FontWeight.w600,
                   color: Color(0xFF1A1A1A),
                 ),
               ),
             ],
           ),
+
           const SizedBox(height: 16),
+
+          // ── Accept Job button ──
           SizedBox(
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: order.status == OrderStatus.ready && !_isAccepting
+                  ? () => _acceptJob(order)
+                  : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
+                backgroundColor: const Color(0xFFBB0018),
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFEFEDED),
+                disabledForegroundColor: const Color(0xFFBFBFBF),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 elevation: 0,
               ),
-              child: const Text(
-                'Accept Job',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              child: _isAccepting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      order.status == OrderStatus.ready
+                          ? 'Accept Job (Picked Up)'
+                          : 'Status: ${order.status.name.toUpperCase()}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(OrderStatus status) {
+    Color bgColor;
+    Color textColor;
+    String label;
+
+    switch (status) {
+      case OrderStatus.ready:
+        bgColor = const Color(0xFFE6F4EA);
+        textColor = const Color(0xFF1E8E3E);
+        label = 'Ready';
+      case OrderStatus.pickedUp:
+        bgColor = const Color(0xFFE8F0FE);
+        textColor = const Color(0xFF1967D2);
+        label = 'Picked Up';
+      default:
+        bgColor = const Color(0xFFFFF8E1);
+        textColor = const Color(0xFFF9A825);
+        label = status.name.toUpperCase();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
       ),
     );
   }
