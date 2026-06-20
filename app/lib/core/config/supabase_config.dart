@@ -20,12 +20,11 @@ class SupabaseConfig {
   );
 
   /// Backend API base URL — set via --dart-define=BACKEND_URL=...
-  /// Default is 192.168.1.81:5000 (your LAN IP).
-  /// If Waydroid ever uses emulated NAT instead of bridged networking,
-  /// change to 10.0.2.2:5000.
+  /// Default is localhost:5000 (same machine). For Waydroid with emulated
+  /// NAT, change to 10.0.2.2:5000.
   static const String backendUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: 'http://192.168.1.81:5000/api',
+    defaultValue: 'http://localhost:5000/api',
   );
 
   static const String authRedirectScheme = 'rasoi';

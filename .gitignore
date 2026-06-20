@@ -25,3 +25,6 @@ opencode.json
 *.csv
 settings.json
 android-*.json
+
+# Environment config (contains API keys)
+app/env/dev.json
