@@ -2,6 +2,8 @@ import 'package:app/features/auth/data/datasources/auth_remote_data_source.dart'
 import 'package:app/features/auth/data/models/user_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'dart:async';
+
 class _FakeRemoteDataSource extends AuthRemoteDataSource {
   @override
   Future<UserModel> login(String identifier, String password) async {
@@ -52,6 +54,9 @@ class _FakeRemoteDataSource extends AuthRemoteDataSource {
 
   @override
   Future<void> logout() async {}
+
+  @override
+  Stream<UserModel?> get onAuthStateChanged => const Stream.empty();
 }
 
 void main() {

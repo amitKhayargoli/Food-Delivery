@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app/cart_provider.dart';
 
 void main() {
   test('CartProvider allows mixing items from different restaurants', () async {
     SharedPreferences.setMockInitialValues({});
+    TestWidgetsFlutterBinding.ensureInitialized();
     final prefs = await SharedPreferences.getInstance();
     final cart = CartProvider(prefs);
     cart.addItem(

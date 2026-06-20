@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:app/core/errors/failures.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:app/features/auth/data/models/user_model.dart';
@@ -56,6 +57,9 @@ class _FakeSupabaseRemoteDataSource extends AuthRemoteDataSource {
 
   @override
   Future<void> logout() async {}
+
+  @override
+  Stream<UserModel?> get onAuthStateChanged => const Stream.empty();
 }
 
 void main() {
