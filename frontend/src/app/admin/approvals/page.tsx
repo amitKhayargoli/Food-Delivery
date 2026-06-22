@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Lottie from 'lottie-react'
 import type { UserRecord } from '@/lib/types'
 import doneAnimation from '@/lib/done.json'
+import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription'
 
 interface RestaurantApplication {
   id: string
@@ -48,6 +49,7 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [confirmTarget, setConfirmTarget] = useState<{
     id: string
@@ -56,8 +58,12 @@ export default function ApprovalsPage() {
     name: string
   } | null>(null)
 
-  const fetchPending = useCallback(() => {
-    setLoading(true)
+  const fetchPending = useCallback((isBackgroundRefresh = false) => {
+    if (isBackgroundRefresh) {
+      setRefreshing(true)
+    } else {
+      setLoading(true)
+    }
     setError(null)
     Promise.all([
       fetch('/api/users').then((r) => r.json()),
@@ -82,10 +88,17 @@ export default function ApprovalsPage() {
         )
       })
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        setRefreshing(false)
+      })
   }, [])
 
   useEffect(() => { fetchPending() }, [fetchPending])
+
+  // Auto-refresh silently when either table changes (falls back to 10s poll)
+  useRealtimeSubscription('users', '*', () => fetchPending(true), 10_000)
+  useRealtimeSubscription('restaurant_applications', '*', () => fetchPending(true), 10_000)
 
   const handleUserAction = async (id: string, status: 'ACTIVE' | 'REJECTED') => {
     setConfirmTarget(null)

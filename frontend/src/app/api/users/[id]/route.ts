@@ -95,8 +95,14 @@ export async function PATCH(
     const body = await request.json()
     const { username, email, phone, role, status } = body
 
+    console.log(`[RT-ADMIN] ✏️ PATCH /api/users/${id} requested`);
+    console.log(`[RT-ADMIN]   └─ fields: ${Object.keys(body).filter(k => k !== 'updated_at').join(', ') || 'none'}`);
+    if (role) console.log(`[RT-ADMIN]   └─ role change requested: → ${role}`);
+    if (status) console.log(`[RT-ADMIN]   └─ status change requested: → ${status}`);
+
     // Validate at least one field is provided
     if (!username && !email && !phone && !role && !status) {
+      console.log(`[RT-ADMIN] ❌ No fields provided to update`);
       return NextResponse.json(
         { error: 'At least one field (username, email, phone, role, status) must be provided' },
         { status: 400 },
@@ -106,6 +112,7 @@ export async function PATCH(
     // Validate role if provided
     const validRoles: AppRole[] = ['CUSTOMER', 'DELIVERY_BOY', 'RESTAURANT_OWNER', 'ADMIN']
     if (role && !validRoles.includes(role)) {
+      console.log(`[RT-ADMIN] ❌ Invalid role: ${role}`);
       return NextResponse.json(
         { error: `Invalid role. Must be one of: ${validRoles.join(', ')}` },
         { status: 400 },
@@ -120,6 +127,7 @@ export async function PATCH(
       .maybeSingle()
 
     if (!existing) {
+      console.log(`[RT-ADMIN] ❌ User not found: ${id}`);
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
@@ -156,6 +164,8 @@ export async function PATCH(
     if (role !== undefined) updateData.role = role
     if (status !== undefined) updateData.status = status
 
+    console.log(`[RT-ADMIN]   └─ update payload:`, JSON.stringify(updateData));
+
     const { data: updated, error } = await supabaseAdmin
       .from('users')
       .update(updateData)
@@ -164,15 +174,17 @@ export async function PATCH(
       .single()
 
     if (error) {
-      console.error('Update user error:', error)
+      console.error('[RT-ADMIN] ❌ Supabase update error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    console.log(`User ${updated.username} (${id}) updated:`, Object.keys(updateData).filter(k => k !== 'updated_at').join(', '))
+    console.log(`[RT-ADMIN] ✅ User ${updated.username} (${id}) updated`);
+    console.log(`[RT-ADMIN]   └─ new role: ${updated.role}, status: ${updated.status}`);
+    console.log(`[RT-ADMIN]   └─ Supabase Realtime should now broadcast this change`);
 
     return NextResponse.json(updated satisfies UserRecord)
   } catch (error) {
-    console.error('Update user error:', error)
+    console.error('[RT-ADMIN] ❌ Update user error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

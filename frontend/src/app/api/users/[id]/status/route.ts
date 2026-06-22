@@ -12,8 +12,11 @@ export async function PATCH(
     const body: { status: UserStatus } = await request.json()
     const { status } = body
 
+    console.log(`[RT-ADMIN] 🏷 PATCH /api/users/${id}/status → ${status}`);
+
     const validStatuses: UserStatus[] = ['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING', 'REJECTED']
     if (!validStatuses.includes(status)) {
+      console.log(`[RT-ADMIN] ❌ Invalid status: ${status}`);
       return NextResponse.json(
         { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
         { status: 400 },
@@ -29,19 +32,21 @@ export async function PATCH(
       .single()
 
     if (error) {
-      console.error('Status update error:', error)
+      console.error('[RT-ADMIN] ❌ Supabase status update error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     if (!user) {
+      console.log(`[RT-ADMIN] ❌ User not found: ${id}`);
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    console.log(`User ${user.username} (${user.role}) status changed to ${status}`)
+    console.log(`[RT-ADMIN] ✅ User ${user.username} (${user.role}) status → ${status}`);
+    console.log(`[RT-ADMIN]   └─ Supabase Realtime should now broadcast this change`);
 
     return NextResponse.json(user)
   } catch (error) {
-    console.error('Status update error:', error)
+    console.error('[RT-ADMIN] ❌ Status update error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

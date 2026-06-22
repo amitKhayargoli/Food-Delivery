@@ -4,7 +4,11 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
 import restaurantRoutes from './routes/restaurant.routes';
+import ordersRoutes from './routes/orders.routes';
+import menuRoutes from './routes/menu.routes';
+import publicRoutes from './routes/public.routes';
 import uploadRoutes from './routes/upload.routes';
+import fcmRoutes from './routes/fcm.routes';
 import { supabase } from './db/supabase';
 
 dotenv.config();
@@ -31,12 +35,17 @@ app.get('/', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/restaurant-applications', restaurantRoutes);
+app.use('/api/orders', ordersRoutes);
+app.use('/api/menu', menuRoutes);
+app.use('/api/restaurants', publicRoutes);
+app.use('/api/fcm', fcmRoutes);
 
 const PORT = Number(process.env.PORT) || 5000;
 
 const REQUIRED_BUCKETS = [
   { name: 'pan-certificates', public: true },
   { name: 'restaurant-images', public: true },
+  { name: 'food-images', public: true },
 ];
 
 async function ensureStorageBuckets(): Promise<void> {

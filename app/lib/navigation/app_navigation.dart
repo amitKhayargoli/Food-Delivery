@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
+import 'package:convex_bottom_bar/convex_bottom_bar.dart';
+import '../providers/auth_provider.dart';
 import '../screens/user/home_screen.dart';
 import '../screens/user/search_screen.dart';
 import '../screens/user/cart_screen.dart';
@@ -19,8 +22,51 @@ class AppNavigation extends StatefulWidget {
   State<AppNavigation> createState() => _AppNavigationState();
 }
 
+/// Custom style hook to control icon sizes — active icon slightly larger than inactive.
+class _NavBarStyle extends StyleHook {
+  @override
+  double? get iconSize => 24; // inactive icons
+
+  @override
+  double get activeIconSize => 28; // active icon: slightly bigger, but not too big
+
+  @override
+  double get activeIconMargin => 5;
+
+  @override
+  TextStyle textStyle(Color color, String? fontFamily) => TextStyle(
+        fontSize: 10,
+        color: color,
+        fontFamily: fontFamily,
+      );
+}
+
 class _AppNavigationState extends State<AppNavigation> {
   int _currentIndex = 0;
+
+  /// Shared cart icon widget used in the nav bar (inactive state).
+  /// No explicit width/height — the parent SizedBox from BlendImageIcon
+  /// controls sizing via the StyleHook's iconSize/activeIconSize values
+  /// (24 inactive, 28 active), matching the Material icon dimensions.
+  static final Widget _cartIcon = SvgPicture.asset(
+    'assets/icons/cart.svg',
+  );
+
+  /// Cart icon with white fill for the active state (sits on the red circle).
+  static final Widget _cartIconActive = SvgPicture.asset(
+    'assets/icons/cart.svg',
+    colorFilter: const ColorFilter.mode(
+      Colors.white,
+      BlendMode.srcIn,
+    ),
+  );
+
+  /// The effective role — uses the live value from AuthProvider (which
+  /// is updated in real-time via Supabase Realtime subscription) and
+  /// falls back to the constructor parameter.
+  String get _effectiveRole =>
+      context.watch<AuthProvider>().role?.toUpperCase() ??
+      widget.role.toUpperCase();
 
   List<Widget> get _userScreens => [
     const UserHomeScreen(),
@@ -49,7 +95,7 @@ class _AppNavigationState extends State<AppNavigation> {
   ];
 
   List<Widget> get _currentScreens {
-    switch (widget.role.toUpperCase()) {
+    switch (_effectiveRole) {
       case 'ADMIN': return _adminScreens;
       case 'RESTAURANT_OWNER': return _ownerScreens;
       case 'DELIVERY_BOY': return _deliveryScreens;
@@ -58,69 +104,107 @@ class _AppNavigationState extends State<AppNavigation> {
     }
   }
 
-  BottomNavigationBarItem _navItem(String path, String label, bool selected) {
-    return BottomNavigationBarItem(
-      icon: SvgPicture.asset(
-        path,
-        width: 24,
-        height: 24,
-        colorFilter: ColorFilter.mode(
-          selected ? const Color(0xFFF5222D) : const Color(0xFF8E8E93),
-          BlendMode.srcIn,
-        ),
-      ),
-      label: label,
-    );
-  }
-
-  List<BottomNavigationBarItem> _buildUserItems(int index) => [
-    _navItem('assets/icons/home.svg', 'Home', index == 0),
-    _navItem('assets/icons/search.svg', 'Search', index == 1),
-    _navItem('assets/icons/orders.svg', 'Orders', index == 2),
-    _navItem('assets/icons/cart.svg', 'Cart', index == 3),
-    _navItem('assets/icons/profile.svg', 'Profile', index == 4),
+  List<TabItem> get _userNavItems => [
+    const TabItem(icon: Icons.home_rounded, title: 'Home'),
+    const TabItem(icon: Icons.search_rounded, title: 'Search'),
+    const TabItem(icon: Icons.receipt_long_rounded, title: 'Orders'),
+    TabItem(
+      icon: _cartIcon,
+      activeIcon: _cartIconActive,
+      title: 'Cart',
+      isIconBlend: false,
+    ),
+    const TabItem(icon: Icons.person_rounded, title: 'Profile'),
   ];
 
-  List<BottomNavigationBarItem> get _adminItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dash'),
-    BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Restaurants'),
-    BottomNavigationBarItem(icon: Icon(Icons.receipt), label: 'Orders'),
+  List<TabItem> get _adminNavItems => const [
+    TabItem(icon: Icons.dashboard_rounded, title: 'Dash'),
+    TabItem(icon: Icons.store_rounded, title: 'Restaurants'),
+    TabItem(icon: Icons.receipt_rounded, title: 'Orders'),
   ];
 
-  List<BottomNavigationBarItem> get _ownerItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Live Orders'),
-    BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
-    BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Insights'),
+  List<TabItem> get _ownerNavItems => const [
+    TabItem(icon: Icons.list_alt_rounded, title: 'Live Orders'),
+    TabItem(icon: Icons.restaurant_menu_rounded, title: 'Menu'),
+    TabItem(icon: Icons.bar_chart_rounded, title: 'Insights'),
   ];
 
-  List<BottomNavigationBarItem> get _deliveryItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.moped), label: 'Jobs'),
-    BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-    BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+  List<TabItem> get _deliveryNavItems => const [
+    TabItem(icon: Icons.moped_rounded, title: 'Jobs'),
+    TabItem(icon: Icons.history_rounded, title: 'History'),
+    TabItem(icon: Icons.person_rounded, title: 'Profile'),
   ];
 
-  List<BottomNavigationBarItem> get _currentItems {
-    switch (widget.role.toUpperCase()) {
-      case 'ADMIN': return _adminItems;
-      case 'RESTAURANT_OWNER': return _ownerItems;
-      case 'DELIVERY_BOY': return _deliveryItems;
+  List<TabItem> get _currentNavItems {
+    switch (_effectiveRole) {
+      case 'ADMIN': return _adminNavItems;
+      case 'RESTAURANT_OWNER': return _ownerNavItems;
+      case 'DELIVERY_BOY': return _deliveryNavItems;
       case 'USER':
-      default: return _buildUserItems(_currentIndex);
+      default: return _userNavItems;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+
+    // Show a snackbar if the role was just changed by a realtime update
+    final roleChangeMsg = authProvider.roleChangeMessage;
+    if (roleChangeMsg != null) {
+      // Consume the message immediately so duplicate rebuilds
+      // in the same frame don't show multiple snackbars.
+      authProvider.clearRoleChangeMessage();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.swap_horiz, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(roleChangeMsg)),
+              ],
+            ),
+            backgroundColor: const Color(0xFF1A1C1C),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: const Color(0xFFEB1727),
+              onPressed: () {},
+            ),
+          ),
+        );
+      });
+    }
+
+    // Clamp index when role switch changes screen count
+    if (_currentIndex >= _currentScreens.length) {
+      _currentIndex = 0;
+    }
+
     return Scaffold(
       body: _currentScreens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: const Color(0xFFF5222D),
-        unselectedItemColor: const Color(0xFF8E8E93),
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        items: _currentItems,
+      bottomNavigationBar: StyleProvider(
+        style: _NavBarStyle(),
+        child: ConvexAppBar(
+          key: ValueKey(_effectiveRole),
+          style: TabStyle.reactCircle,
+          backgroundColor: Colors.white,
+          activeColor: const Color(0xFFF5222D),
+          color: const Color(0xFF424242),
+          elevation: 12,
+          top: -28,
+          initialActiveIndex: _currentIndex,
+          onTap: (index) => setState(() => _currentIndex = index),
+          items: _currentNavItems,
+        ),
       ),
     );
   }

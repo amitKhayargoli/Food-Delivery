@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import type { UserRecord, AppRole } from '@/lib/types'
+import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription'
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([])
@@ -13,19 +14,23 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
 
-  const fetchUsers = () => {
-    setLoading(true)
-    fetch('/api/users')
+  const fetchUsers = useCallback(() => {
+    return fetch('/api/users')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch users')
         return res.json()
       })
       .then((data) => setUsers(data))
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
-  }
+  }, [])
 
-  useEffect(() => { fetchUsers() }, [])
+  useEffect(() => {
+    setLoading(true)
+    fetchUsers().finally(() => setLoading(false))
+  }, [fetchUsers])
+
+  // Auto-refresh when users table changes (falls back to 10s poll)
+  useRealtimeSubscription('users', '*', fetchUsers, 10_000)
 
   const handleDelete = async () => {
     if (!deleteTarget) return

@@ -50,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
             builder: (_) => CompleteProfileScreen(
               initialName: result['name'] ?? '',
               googleToken: result['token'] ?? '',
+              tempToken: result['temp_token'] as String?,
             ),
           ),
         );

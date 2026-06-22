@@ -4,3 +4,7 @@ node_modules
 
 /generated/prisma
 .md
+
+# Firebase Admin SDK service account (contains private keys)
+fcm-service-account.json
+
