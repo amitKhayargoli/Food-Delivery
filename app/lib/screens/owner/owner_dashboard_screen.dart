@@ -9,6 +9,7 @@ import '../../widgets/toggle_switch.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
 import '../user/order_detail_screen.dart';
+import 'manage_restaurant_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
@@ -34,6 +35,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   void initState() {
     super.initState();
     _fetchOrders();
+    _fetchRestaurantSettings();
   }
 
   @override
@@ -154,6 +156,52 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         _error = 'Failed to load orders. Check your connection.';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Fetch the restaurant settings (is_accepting_orders) from the API.
+  Future<void> _fetchRestaurantSettings() async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final app = await api.getMyApplication(token: token);
+      if (app != null && mounted) {
+        setState(() {
+          _isAcceptingOrders = app['is_accepting_orders'] as bool? ?? true;
+        });
+      }
+    } catch (_) {
+      // Silently fail — local default is fine
+    }
+  }
+
+  /// Toggle accepting orders via the API with optimistic UI.
+  Future<void> _toggleAcceptingOrders(bool newValue) async {
+    final token = _token;
+    if (token == null) return;
+
+    // Optimistic update
+    setState(() => _isAcceptingOrders = newValue);
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.toggleAcceptingOrders(isAccepting: newValue, token: token);
+    } on ApiException catch (e) {
+      // Revert on failure
+      if (mounted) setState(() => _isAcceptingOrders = !newValue);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isAcceptingOrders = !newValue);
     }
   }
 
@@ -438,23 +486,53 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       ),
       child: Row(
         children: [
-          const Expanded(
-            child: Text(
-              'Live Orders',
-              style: TextStyle(
-                color: Color(0xFF1A1C1C),
-                fontSize: 18,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w700,
-                height: 1.33,
-              ),
+          Expanded(
+            child: Row(
+              children: [
+                const Text(
+                  'Live Orders',
+                  style: TextStyle(
+                    color: Color(0xFF1A1C1C),
+                    fontSize: 18,
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w700,
+                    height: 1.33,
+                  ),
+                ),
+                const Spacer(),
+                // Settings gear → Manage Restaurant
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ManageRestaurantScreen(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.settings_rounded,
+                      size: 20,
+                      color: Color(0xFF5C5C5C),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
           ),
           _buildAcceptingIndicator(),
           const SizedBox(width: 8),
           ToggleSwitch(
             value: _isAcceptingOrders,
-            onChanged: (v) => setState(() => _isAcceptingOrders = v),
+            onChanged: _toggleAcceptingOrders,
           ),
         ],
       ),
