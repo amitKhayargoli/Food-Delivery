@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import 'cart_provider.dart';
 import 'favorites_provider.dart';
+import 'providers/rider_notes_provider.dart';
 import 'features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import 'injection_container.dart' as di;
 
@@ -16,4 +17,8 @@ final cartStateProvider = ChangeNotifierProvider<CartProvider>((ref) {
 
 final favoritesProvider = ChangeNotifierProvider<FavoritesProvider>((ref) {
   return FavoritesProvider(di.sl<SharedPreferences>());
+});
+
+final riderNotesProvider = ChangeNotifierProvider<RiderNotesProvider>((ref) {
+  return di.sl<RiderNotesProvider>();
 });

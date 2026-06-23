@@ -137,6 +137,7 @@ class Order {
   final DateTime? deliveredAt;
   final DateTime? cancelledAt;
   final String? rejectionReason;
+  final String? riderNote;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -163,6 +164,7 @@ class Order {
     this.deliveredAt,
     this.cancelledAt,
     this.rejectionReason,
+    this.riderNote,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -216,6 +218,7 @@ class Order {
           json['cancelled_at'] as String? ?? json['cancelledAt'] as String?),
       rejectionReason: json['rejection_reason'] as String? ??
           json['rejectionReason'] as String?,
+      riderNote: json['rider_note'] as String? ?? json['riderNote'] as String?,
       createdAt: _parseDateTime(
               json['created_at'] as String? ?? json['createdAt'] as String?) ??
           DateTime.now(),

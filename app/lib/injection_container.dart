@@ -20,6 +20,7 @@ import 'core/services/supabase_client_service.dart';
 import 'core/services/api_service.dart';
 import 'core/services/storage_service.dart';
 import 'core/services/push_notification_service.dart';
+import 'providers/rider_notes_provider.dart';
 
 final sl = GetIt.instance;
 
@@ -69,6 +70,7 @@ Future<void> init() async {
   sl.registerLazySingleton(() => ApiService(dio));
   sl.registerLazySingleton(() => StorageService(dio));
   sl.registerLazySingleton(() => PushNotificationService(dio));
+  sl.registerLazySingleton(() => RiderNotesProvider(sl<ApiService>()));
   sl.registerLazySingleton<GlobalKey<NavigatorState>>(
     () => GlobalKey<NavigatorState>(),
   );

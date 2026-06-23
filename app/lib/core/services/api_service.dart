@@ -444,6 +444,29 @@ class ApiService {
     }
   }
 
+  /// Fetch completed/cancelled order history for the authenticated customer
+  Future<OrderHistoryResponse> getOrderHistory({
+    required String token,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/orders/history',
+        queryParameters: {'limit': limit, 'offset': offset},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final orders = (data['orders'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      final total = (data['total'] as num?)?.toInt() ?? orders.length;
+      return OrderHistoryResponse(orders: orders, total: total);
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Search orders by order number (owner-facing)
   Future<List<Map<String, dynamic>>> searchOrders({required String query, required String token}) async {
     try {
@@ -509,6 +532,67 @@ class ApiService {
       );
       final data = response.data as Map<String, dynamic>;
       return data['order'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Restaurant Management API
+  // ──────────────────────────────────────────────
+
+  /// Update the authenticated owner's restaurant profile
+  Future<Map<String, dynamic>> updateRestaurant({
+    required Map<String, dynamic> data,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/restaurant-applications/my',
+        data: data,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final result = response.data as Map<String, dynamic>;
+      if (result['application'] != null) {
+        return result['application'] as Map<String, dynamic>;
+      }
+      return result;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Toggle whether the restaurant is accepting new orders
+  Future<void> toggleAcceptingOrders({
+    required bool isAccepting,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/restaurant-applications/my/accepting-orders',
+        data: {'is_accepting_orders': isAccepting},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Add a rider note to an order (delivery boy -> customer)
+  Future<void> addRiderNote({
+    required String orderId,
+    required String note,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/orders/$orderId/rider-note',
+        data: {'rider_note': note},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
     } on DioException catch (e) {
       final message = _extractError(e);
       throw ApiException(message);
@@ -618,6 +702,13 @@ class GoogleCompleteProfileResponse {
     required this.token,
     this.user,
   });
+}
+
+class OrderHistoryResponse {
+  final List<Map<String, dynamic>> orders;
+  final int total;
+
+  OrderHistoryResponse({required this.orders, required this.total});
 }
 
 class ApiException implements Exception {
