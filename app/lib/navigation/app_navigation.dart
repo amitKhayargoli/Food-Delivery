@@ -46,16 +46,21 @@ class _AppNavigationState extends State<AppNavigation> {
   int _currentIndex = 0;
 
   /// Shared cart icon widget used in the nav bar (inactive state).
-  /// No explicit width/height — the parent SizedBox from BlendImageIcon
-  /// controls sizing via the StyleHook's iconSize/activeIconSize values
-  /// (24 inactive, 28 active), matching the Material icon dimensions.
+  /// Explicit width/height match the StyleHook's iconSize (24) so the SVG
+  /// doesn't render at its native (larger) size — the ConvexAppBar handles
+  /// the active size bump to 28 via activeIconSize.
+  /// Cart icon — uses the SVG's native 24×24 dimensions from the file.
+  /// BoxFit.scaleDown prevents the ConvexAppBar's active circle from
+  /// scaling it up larger than the other nav icons.
   static final Widget _cartIcon = SvgPicture.asset(
     'assets/icons/cart.svg',
+    fit: BoxFit.scaleDown,
   );
 
   /// Cart icon with white fill for the active state (sits on the red circle).
   static final Widget _cartIconActive = SvgPicture.asset(
     'assets/icons/cart.svg',
+    fit: BoxFit.scaleDown,
     colorFilter: const ColorFilter.mode(
       Colors.white,
       BlendMode.srcIn,
