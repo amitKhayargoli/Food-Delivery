@@ -14,6 +14,13 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   SelectedDeliveryLocation? _selectedAddress;
+  final _deliveryNotesCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _deliveryNotesCtrl.dispose();
+    super.dispose();
+  }
 
   Widget _buildOrderSummary(
     double subtotal,
@@ -262,6 +269,38 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     const Icon(Icons.chevron_right, color: Color(0xFFBFBFBF)),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Delivery Notes / Landmark ──
+            const Text(
+              'Delivery Notes (Optional)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF262626),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF0F0F0)),
+              ),
+              child: TextField(
+                controller: _deliveryNotesCtrl,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Near the temple, gate code: 1234',
+                  hintStyle: TextStyle(color: Color(0xFFBFBFBF), fontSize: 14),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),

@@ -6,6 +6,7 @@ import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import '../../providers/rider_notes_provider.dart';
 
 class DeliveryJobsScreen extends StatefulWidget {
   const DeliveryJobsScreen({super.key});
@@ -20,6 +21,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
   String? _error;
   bool _isAccepting = false;
   sb.RealtimeChannel? _orderChannel;
+  // Rider note controllers per order
+  final Map<String, TextEditingController> _riderNoteCtrls = {};
+  final Map<String, String> _lastSentNotes = {};
 
   String? get _token => context.read<AuthProvider>().token;
   String? get _userId => SupabaseClientService.client.auth.currentUser?.id;
@@ -33,6 +37,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
   @override
   void dispose() {
     _unsubscribeFromOrders();
+    for (final ctrl in _riderNoteCtrls.values) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -98,6 +105,11 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
       final api = di.sl<ApiService>();
       final rawOrders = await api.getMyDeliveryJobs(token: token);
       if (!mounted) return;
+      // Clear old rider note controllers so fresh data is reflected
+      for (final ctrl in _riderNoteCtrls.values) {
+        ctrl.dispose();
+      }
+      _riderNoteCtrls.clear();
       setState(() {
         _jobs = rawOrders.map((o) => Order.fromJson(o)).toList();
         _isLoading = false;
@@ -401,6 +413,52 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
             ],
           ),
 
+          // ── Customer Landmark / Delivery Notes ──
+          if (order.deliveryNotes != null && order.deliveryNotes!.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFFE082)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline,
+                      size: 14, color: Color(0xFFF9A825)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Customer Note',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF795548)),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          order.deliveryNotes!,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF795548)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // ── Rider Quick Note Input ──
+          _buildRiderNoteInput(order),
+
           const SizedBox(height: 16),
 
           // ── Accept Job button ──
@@ -443,6 +501,153 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRiderNoteInput(Order order) {
+    // Get or create a controller for this order
+    final ctrl = _riderNoteCtrls.putIfAbsent(
+      order.id,
+      () => TextEditingController(
+        text: order.riderNote ?? '',
+      ),
+    );
+    final notesProvider = context.read<RiderNotesProvider>();
+    final isSending = notesProvider.isSending(order.id);
+    final hasExistingNote = order.riderNote != null && order.riderNote!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.chat_outlined,
+                size: 16, color: Color(0xFF1967D2)),
+            const SizedBox(width: 6),
+            const Text(
+              'Quick Note to Customer',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1967D2),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (hasExistingNote) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F0FE),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF1967D2).withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle,
+                    size: 14, color: Color(0xFF1967D2)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Sent: "${order.riderNote!}"',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF1967D2),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: TextField(
+                  controller: ctrl,
+                  enabled: !isSending,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. "I have arrived!"',
+                    hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF1967D2)),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 40,
+              width: 40,
+              child: ElevatedButton(
+                onPressed: ctrl.text.trim().isEmpty || isSending
+                    ? null
+                    : () {
+                        final token = _token;
+                        if (token == null) return;
+                        notesProvider.sendRiderNote(
+                          orderId: order.id,
+                          note: ctrl.text.trim(),
+                          token: token,
+                        );
+                        ctrl.clear();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Note sent to customer!'),
+                              backgroundColor: Color(0xFF1967D2),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1967D2),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFEFEDED),
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: isSending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded, size: 18),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

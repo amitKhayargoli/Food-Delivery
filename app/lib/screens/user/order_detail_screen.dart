@@ -382,6 +382,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     const SizedBox(height: 12),
                   ],
 
+                  // ── Rider Note ──
+                  if (_order.riderNote != null && _order.riderNote!.isNotEmpty) ...[
+                    _buildRiderNoteCard(_order.riderNote!),
+                    const SizedBox(height: 12),
+                  ],
+
                   // ── Delivery Partner Info ──
                   if (_order.deliveryBoyId != null)
                     _buildInfoCard(
@@ -692,6 +698,58 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ),
           if (trailing != null) trailing,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiderNoteCard(String note) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F0FE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x331967D2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0x1A1967D2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.chat_bubble_outline,
+                color: Color(0xFF1967D2), size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your Rider Says',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF1967D2),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '"$note"',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1A1C1C),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
