@@ -239,7 +239,7 @@ export const rejectOrder = async (req: Request, res: Response): Promise<void> =>
     const { data: updated, error } = await supabase.admin
       .from('orders')
       .update({
-        status: 'REJECTED',
+        status: 'CANCELLED',
         rejection_reason: reason || null,
         cancelled_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -476,7 +476,7 @@ export const getMyDeliveryJobs = async (req: Request, res: Response): Promise<vo
       .from('orders')
       .select('*')
       .eq('delivery_boy_id', userId)
-      .not('status', 'in', '(DELIVERED,CANCELLED,REJECTED)')
+      .not('status', 'in', '(DELIVERED,CANCELLED)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -620,3 +620,103 @@ export const assignDeliveryBoy = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// ──────────────────────────────────────────────
+// GET /api/orders/history
+// Get completed/cancelled order history for the authenticated customer
+// ──────────────────────────────────────────────
+export const getOrderHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 50);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+    // Terminal statuses — exclude active ones (PENDING, ACCEPTED, PREPARING, READY, PICKED_UP)
+    // Note: REJECTED maps to CANCELLED in the DB enum — rejection_reason stores the detail
+    const terminalStatuses = ['DELIVERED', 'CANCELLED'];
+
+    const { data: orders, error, count } = await supabase.admin
+      .from('orders')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .in('status', terminalStatuses)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      console.error('Fetch order history error:', error);
+      res.status(500).json({ error: 'Failed to fetch order history.' });
+      return;
+    }
+
+    res.status(200).json({ orders, total: count ?? orders?.length ?? 0 });
+  } catch (error) {
+    console.error('Get order history error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/orders/:id/rider-note
+// Add a rider note to an order (delivery boy -> customer)
+// ──────────────────────────────────────────────
+export const addRiderNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { rider_note } = req.body;
+
+    if (!rider_note || rider_note.toString().trim().length === 0) {
+      res.status(400).json({ error: 'rider_note is required.' });
+      return;
+    }
+
+    // Verify the delivery boy is assigned to this order
+    const { data: order } = await supabase.admin
+      .from('orders')
+      .select('id, delivery_boy_id')
+      .eq('id', id)
+      .eq('delivery_boy_id', userId)
+      .maybeSingle();
+
+    if (!order) {
+      res.status(403).json({ error: 'You are not assigned to this order.' });
+      return;
+    }
+
+    const { data: updated, error } = await supabase.admin
+      .from('orders')
+      .update({
+        rider_note: rider_note.toString().trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('id, rider_note')
+      .single();
+
+    if (error) {
+      console.error('Add rider note error:', error);
+      res.status(500).json({ error: 'Failed to add rider note.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Rider note added.',
+      rider_note: updated.rider_note,
+    });
+  } catch (error) {
+    console.error('Add rider note error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+

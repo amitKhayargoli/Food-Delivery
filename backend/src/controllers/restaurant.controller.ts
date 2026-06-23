@@ -282,3 +282,162 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// ──────────────────────────────────────────────
+// PUT /api/restaurant-applications/my
+// Update the authenticated owner's restaurant profile
+// ──────────────────────────────────────────────
+export const updateRestaurant = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    // Find approved application for this user
+    const { data: application, error: fetchError } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id, restaurant_name, status')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .maybeSingle();
+
+    if (fetchError || !application) {
+      res.status(404).json({ error: 'No approved restaurant application found.' });
+      return;
+    }
+
+    const {
+      restaurant_name,
+      owner_name,
+      phone,
+      email,
+      address,
+      description,
+      logo_url,
+      cover_image_url,
+      open_time,
+      close_time,
+      cuisine_type,
+    } = req.body;
+
+    // Validate required fields
+    if (restaurant_name !== undefined && restaurant_name.toString().trim().length === 0) {
+      res.status(400).json({ error: 'Restaurant name cannot be empty.' });
+      return;
+    }
+
+    // If changing restaurant name, check it's not taken by another approved application
+    if (restaurant_name !== undefined && restaurant_name !== application.restaurant_name) {
+      const { data: nameConflict } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id')
+        .eq('restaurant_name', restaurant_name)
+        .eq('status', 'APPROVED')
+        .neq('id', application.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (nameConflict) {
+        res.status(409).json({ error: 'This restaurant name is already registered by another restaurant.' });
+        return;
+      }
+    }
+
+    // Build update object — only include fields that were sent
+    const updates: Record<string, unknown> = {};
+    if (restaurant_name !== undefined) updates.restaurant_name = restaurant_name;
+    if (owner_name !== undefined) updates.owner_name = owner_name;
+    if (phone !== undefined) updates.phone = phone;
+    if (email !== undefined) updates.email = email;
+    if (address !== undefined) updates.address = address;
+    if (description !== undefined) updates.description = description;
+    if (logo_url !== undefined) updates.logo_url = logo_url;
+    if (cover_image_url !== undefined) updates.cover_image_url = cover_image_url;
+    if (open_time !== undefined) updates.open_time = open_time;
+    if (close_time !== undefined) updates.close_time = close_time;
+    if (cuisine_type !== undefined) updates.cuisine_type = cuisine_type;
+    updates.updated_at = new Date().toISOString();
+
+    const { data: updated, error: updateError } = await supabase.admin
+      .from('restaurant_applications')
+      .update(updates)
+      .eq('id', application.id)
+      .select('*')
+      .single();
+
+    if (updateError) {
+      console.error('Restaurant update error:', updateError);
+      res.status(500).json({ error: 'Failed to update restaurant profile.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Restaurant profile updated successfully.',
+      application: updated,
+    });
+  } catch (error) {
+    console.error('Update restaurant error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/restaurant-applications/my/accepting-orders
+// Toggle whether the restaurant is accepting new orders
+// ──────────────────────────────────────────────
+export const toggleAcceptingOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { is_accepting_orders } = req.body;
+
+    if (typeof is_accepting_orders !== 'boolean') {
+      res.status(400).json({ error: 'is_accepting_orders must be a boolean.' });
+      return;
+    }
+
+    // Find approved application for this user
+    const { data: application, error: fetchError } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .maybeSingle();
+
+    if (fetchError || !application) {
+      res.status(404).json({ error: 'No approved restaurant application found.' });
+      return;
+    }
+
+    const { data: updated, error: updateError } = await supabase.admin
+      .from('restaurant_applications')
+      .update({
+        is_accepting_orders,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', application.id)
+      .select('id, is_accepting_orders')
+      .single();
+
+    if (updateError) {
+      console.error('Toggle accepting orders error:', updateError);
+      res.status(500).json({ error: 'Failed to toggle accepting orders.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: is_accepting_orders ? 'Now accepting orders.' : 'Order acceptance paused.',
+      is_accepting_orders: updated.is_accepting_orders,
+    });
+  } catch (error) {
+    console.error('Toggle accepting orders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+

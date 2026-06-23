@@ -5,6 +5,7 @@ import {
   getMyOrders,
   searchOrders,
   getMyDeliveryJobs,
+  getOrderHistory,
   acceptOrder,
   rejectOrder,
   markAsPreparing,
@@ -12,6 +13,7 @@ import {
   markAsPickedUp,
   getDeliveryBoys,
   assignDeliveryBoy,
+  addRiderNote,
 } from '../controllers/orders.controller';
 
 const router = Router();
@@ -21,6 +23,9 @@ router.get('/my', getMyOrders);
 
 // Delivery boy assigned jobs
 router.get('/delivery/my', getMyDeliveryJobs);
+
+// Customer order history — MUST be placed before /:id to avoid route conflict
+router.get('/history', getOrderHistory);
 
 // Owner order search — MUST be placed before /:id to avoid route conflict
 router.get('/search', searchOrders);
@@ -37,5 +42,6 @@ router.patch('/:id/preparing', markAsPreparing);
 router.patch('/:id/ready', markAsReady);
 router.patch('/:id/picked-up', markAsPickedUp);
 router.patch('/:id/assign', assignDeliveryBoy);
+router.patch('/:id/rider-note', addRiderNote);
 
 export default router;
