@@ -1,4 +1,3 @@
-import 'package:app/core/errors/failures.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,7 +79,8 @@ class _FakeGoogleSignInAuthentication implements GoogleSignInAuthentication {
   @override
   final String? idToken;
 
-  @override
+  // accessToken is not part of GoogleSignInAuthentication but is used
+  // in the test to track what the auth method receives.
   final String? accessToken;
 
   @override
