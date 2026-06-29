@@ -1,26 +1,7 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
+import { getUserId } from '../utils/auth';
 import { notifyUser } from '../services/fcm.service';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-
-interface JwtPayload {
-  id: string;
-  role: string;
-}
-
-function getUserId(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as JwtPayload;
-    return payload.id;
-  } catch {
-    return null;
-  }
-}
 
 // ──────────────────────────────────────────────
 // POST /api/restaurant-applications
@@ -28,7 +9,7 @@ function getUserId(req: Request): string | null {
 // ──────────────────────────────────────────────
 export const applyForRestaurant = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -48,6 +29,8 @@ export const applyForRestaurant = async (req: Request, res: Response): Promise<v
       open_time,
       close_time,
       cuisine_type,
+      latitude,
+      longitude,
     } = req.body;
 
     // Validate required fields
@@ -106,6 +89,8 @@ export const applyForRestaurant = async (req: Request, res: Response): Promise<v
         open_time: open_time || null,
         close_time: close_time || null,
         cuisine_type: cuisine_type || null,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
         status: 'PENDING',
       })
       .select('id, restaurant_name, status, created_at')
@@ -133,7 +118,7 @@ export const applyForRestaurant = async (req: Request, res: Response): Promise<v
 // ──────────────────────────────────────────────
 export const getMyApplication = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -231,22 +216,37 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
       return;
     }
 
-    // If approved, update the user's role to RESTAURANT_OWNER
+    // If approved, append RESTAURANT_OWNER to the user's roles array
+    // while preserving their existing roles (e.g. CUSTOMER).
+    // This allows the user to switch back to customer mode at any time.
     if (status === 'APPROVED' && application.user_id) {
       console.log(`[RT-BACKEND] 🎉 Approving application "${application.restaurant_name}" for user ${application.user_id}`);
-      console.log(`[RT-BACKEND]   └─ Updating user role: → RESTAURANT_OWNER`);
+
+      // Fetch current roles, merge, update — simple and reliable
+      const { data: userData } = await supabase.admin
+        .from('users')
+        .select('roles')
+        .eq('id', application.user_id)
+        .maybeSingle();
+
+      const currentRoles: string[] = userData?.roles || ['CUSTOMER'];
+      if (!currentRoles.includes('RESTAURANT_OWNER')) {
+        currentRoles.push('RESTAURANT_OWNER');
+      }
 
       const { error: roleError } = await supabase.admin
         .from('users')
-        .update({ role: 'RESTAURANT_OWNER', status: 'ACTIVE' })
+        .update({
+          role: 'RESTAURANT_OWNER',
+          roles: currentRoles,
+          status: 'ACTIVE',
+        })
         .eq('id', application.user_id);
 
       if (roleError) {
         console.error('[RT-BACKEND] ❌ User role update error:', roleError);
-        // Non-fatal — application is still approved
       } else {
-        console.log(`[RT-BACKEND] ✅ User ${application.user_id} role updated to RESTAURANT_OWNER`);
-        console.log(`[RT-BACKEND]   └─ Supabase Realtime should now broadcast this change`);
+        console.log(`[RT-BACKEND] ✅ User ${application.user_id} roles updated — added RESTAURANT_OWNER`);
 
         // Send push notification to the user about their new role
         notifyUser(application.user_id, supabase.admin, {
@@ -289,7 +289,7 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
 // ──────────────────────────────────────────────
 export const updateRestaurant = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -320,6 +320,8 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
       open_time,
       close_time,
       cuisine_type,
+      latitude,
+      longitude,
     } = req.body;
 
     // Validate required fields
@@ -358,6 +360,8 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
     if (open_time !== undefined) updates.open_time = open_time;
     if (close_time !== undefined) updates.close_time = close_time;
     if (cuisine_type !== undefined) updates.cuisine_type = cuisine_type;
+    if (latitude !== undefined) updates.latitude = latitude;
+    if (longitude !== undefined) updates.longitude = longitude;
     updates.updated_at = new Date().toISOString();
 
     const { data: updated, error: updateError } = await supabase.admin
@@ -389,7 +393,7 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
 // ──────────────────────────────────────────────
 export const toggleAcceptingOrders = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -437,6 +441,66 @@ export const toggleAcceptingOrders = async (req: Request, res: Response): Promis
     });
   } catch (error) {
     console.error('Toggle accepting orders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PATCH /api/restaurant-applications/my/auto-dispatch
+// Toggle automatic delivery boy assignment
+// ──────────────────────────────────────────────
+export const toggleAutoDispatch = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { auto_dispatch_enabled } = req.body;
+
+    if (typeof auto_dispatch_enabled !== 'boolean') {
+      res.status(400).json({ error: 'auto_dispatch_enabled must be a boolean.' });
+      return;
+    }
+
+    // Find approved application for this user
+    const { data: application, error: fetchError } = await supabase.admin
+      .from('restaurant_applications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'APPROVED')
+      .maybeSingle();
+
+    if (fetchError || !application) {
+      res.status(404).json({ error: 'No approved restaurant application found.' });
+      return;
+    }
+
+    const { data: updated, error: updateError } = await supabase.admin
+      .from('restaurant_applications')
+      .update({
+        auto_dispatch_enabled,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', application.id)
+      .select('id, auto_dispatch_enabled')
+      .single();
+
+    if (updateError) {
+      console.error('Toggle auto-dispatch error:', updateError);
+      res.status(500).json({ error: 'Failed to toggle auto-dispatch.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: auto_dispatch_enabled
+        ? 'Auto-dispatch enabled — riders will be assigned automatically.'
+        : 'Auto-dispatch disabled — assign riders manually.',
+      auto_dispatch_enabled: updated.auto_dispatch_enabled,
+    });
+  } catch (error) {
+    console.error('Toggle auto-dispatch error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

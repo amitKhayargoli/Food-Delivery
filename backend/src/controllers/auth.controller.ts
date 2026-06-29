@@ -64,7 +64,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         password_hash,
         role: 'CUSTOMER',
       }, { onConflict: 'id' })
-      .select('id, username, email, role')
+      .select('id, username, email, role, roles')
       .single();
 
     if (error || !user) {
@@ -74,7 +74,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    const roles = user.roles || ['CUSTOMER'];
+    const token = jwt.sign({ id: user.id, role: user.role, roles }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({
       message: 'User created successfully',
@@ -84,6 +85,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         username: user.username,
         email: user.email,
         role: user.role,
+        roles,
       },
     });
   } catch (error) {
@@ -127,7 +129,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    const roles = user.roles || [user.role];
+    const token = jwt.sign({ id: user.id, role: user.role, roles }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(200).json({
       message: 'Logged in successfully',
@@ -137,6 +140,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         username: user.username,
         email: user.email,
         role: user.role,
+        roles,
       },
     });
   } catch (error) {
@@ -186,7 +190,8 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
     if (user) {
       // If user has a real phone (not TEMP_), they're fully registered
       if (user.phone && !user.phone.startsWith('TEMP_')) {
-        const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        const roles = user.roles || [user.role];
+        const token = jwt.sign({ id: user.id, role: user.role, roles }, JWT_SECRET, { expiresIn: '1d' });
         res.status(200).json({
           message: 'Logged in successfully',
           token,
@@ -195,13 +200,15 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
             username: user.username,
             email: user.email,
             role: user.role,
+            roles,
           },
         });
         return;
       }
 
-      // Profile completion needed
-      const temp_token = jwt.sign({ google_id }, JWT_SECRET, { expiresIn: '1h' });
+      // Profile completion needed — include user_id so completeProfile
+      // can find this user by ID (the users table may not have google_id stored)
+      const temp_token = jwt.sign({ user_id: user.id }, JWT_SECRET, { expiresIn: '1h' });
       res.status(200).json({
         requires_profile_completion: true,
         temp_token,
@@ -267,7 +274,7 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const temp_token = jwt.sign({ google_id }, JWT_SECRET, { expiresIn: '1h' });
+    const temp_token = jwt.sign({ user_id: authUserId }, JWT_SECRET, { expiresIn: '1h' });
     res.status(200).json({
       requires_profile_completion: true,
       temp_token,
@@ -283,27 +290,36 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 // ──────────────────────────────────────────────
 export const completeProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { temp_token, phone, username } = req.body;
+    const { phone, username } = req.body;
+
+    // Accept temp_token from body OR from Authorization: Bearer <token>
+    let temp_token = req.body.temp_token;
+    if (!temp_token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        temp_token = authHeader.slice(7);
+      }
+    }
 
     if (!temp_token || !phone || !username) {
       res.status(400).json({ error: 'temp_token, phone, and username are required' });
       return;
     }
 
-    let payload: { google_id: string };
+    let payload: { user_id: string };
     try {
-      payload = jwt.verify(temp_token, JWT_SECRET) as { google_id: string };
+      payload = jwt.verify(temp_token, JWT_SECRET) as { user_id: string };
     } catch {
       res.status(401).json({ error: 'Invalid or expired temp token' });
       return;
     }
 
-    const { google_id } = payload;
+    const { user_id } = payload;
 
     const { data: user } = await supabase.admin
       .from('users')
       .select('*')
-      .eq('google_id', google_id)
+      .eq('id', user_id)
       .maybeSingle();
 
     if (!user) {
@@ -321,6 +337,23 @@ export const completeProfile = async (req: Request, res: Response): Promise<void
       .maybeSingle();
 
     if (existing) {
+      // If this user already has a real profile (non-TEMP phone), they don't
+      // need to complete it again — return a proper JWT.
+      if (user.phone && !user.phone.startsWith('TEMP_')) {
+        const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        res.status(200).json({
+          message: 'Profile already completed',
+          token,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+          },
+        });
+        return;
+      }
+
       res.status(409).json({ error: 'Phone or username already in use' });
       return;
     }
@@ -329,7 +362,7 @@ export const completeProfile = async (req: Request, res: Response): Promise<void
       .from('users')
       .update({ phone, username })
       .eq('id', user.id)
-      .select('id, username, email, role')
+      .select('id, username, email, role, roles')
       .single();
 
     if (error || !updatedUser) {
@@ -337,7 +370,8 @@ export const completeProfile = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const token = jwt.sign({ id: updatedUser.id, role: updatedUser.role }, JWT_SECRET, { expiresIn: '1d' });
+    const roles = updatedUser.roles || [updatedUser.role];
+    const token = jwt.sign({ id: updatedUser.id, role: updatedUser.role, roles }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(200).json({
       message: 'Profile completed successfully',
@@ -347,6 +381,7 @@ export const completeProfile = async (req: Request, res: Response): Promise<void
         username: updatedUser.username,
         email: updatedUser.email,
         role: updatedUser.role,
+        roles,
       },
     });
   } catch (error) {
@@ -728,8 +763,9 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     }
 
     // ── Generate JWT ──────────────────────────
+    const roles = user.roles || [user.role];
     const token = jwt.sign(
-      { id: user.id, role: user.role, phone: user.phone },
+      { id: user.id, role: user.role, roles, phone: user.phone },
       JWT_SECRET,
       { expiresIn: '7d' },
     );
@@ -743,6 +779,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        roles,
       },
     });
   } catch (error) {
