@@ -329,7 +329,7 @@ describe('DELETE /api/users/[id] — Delete User API', () => {
     })
     await DELETE(request, { params: Promise.resolve({ id: 'user-to-delete' }) })
 
-    expect(mockSelect).toHaveBeenCalledWith('id, username, role')
+    expect(mockSelect).toHaveBeenCalledWith('id, username, role, roles')
   })
 
   // ── 17. Return 500 when an unexpected error is thrown ────────────

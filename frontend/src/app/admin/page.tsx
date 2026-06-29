@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import type { UserRecord } from '@/lib/types'
+import type { UserRecord, AppRole } from '@/lib/types'
 import { useRealtimeSubscription } from '@/lib/hooks/useRealtimeSubscription'
 
 export default function AdminDashboard() {
@@ -30,7 +30,10 @@ export default function AdminDashboard() {
 
   const roleCounts = users.reduce(
     (acc, u) => {
-      acc[u.role] = (acc[u.role] || 0) + 1
+      const userRoles: AppRole[] = (u.roles?.length ? u.roles : [u.role]) as AppRole[]
+      for (const r of userRoles) {
+        acc[r] = (acc[r] || 0) + 1
+      }
       return acc
     },
     {} as Record<string, number>,
@@ -123,14 +126,18 @@ export default function AdminDashboard() {
                     <td className="font-medium">{user.username}</td>
                     <td className="text-base-content/60 text-sm">{user.email}</td>
                     <td>
-                      <span className={`badge px-3 py-1 rounded-full ${
-                        user.role === 'ADMIN' ? 'badge-error' :
-                        user.role === 'DELIVERY_BOY' ? 'badge-secondary' :
-                        user.role === 'RESTAURANT_OWNER' ? 'badge-warning' :
-                        'badge-success'
-                      }`}>
-                        {user.role}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {(user.roles?.length ? user.roles : [user.role]).map((r) => (
+                          <span key={r} className={`badge px-2 py-1 rounded-full text-xs ${
+                            r === 'ADMIN' ? 'badge-error' :
+                            r === 'DELIVERY_BOY' ? 'badge-secondary' :
+                            r === 'RESTAURANT_OWNER' ? 'badge-warning' :
+                            'badge-success'
+                          }`}>
+                            {r === 'RESTAURANT_OWNER' ? 'OWNER' : r}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 ))}

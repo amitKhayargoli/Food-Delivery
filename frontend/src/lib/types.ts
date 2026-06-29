@@ -7,6 +7,7 @@ export interface UserRecord {
   email: string
   phone: string | null
   role: AppRole
+  roles: AppRole[]
   status: string
   created_at: string
   updated_at: string
@@ -18,6 +19,7 @@ export interface CreateUserPayload {
   phone?: string
   password: string
   role: AppRole
+  roles?: AppRole[]
 }
 
 export interface StatusUpdatePayload {
@@ -29,5 +31,6 @@ export interface UpdateUserPayload {
   email?: string
   phone?: string
   role?: AppRole
+  roles?: AppRole[]
   status?: UserStatus
 }

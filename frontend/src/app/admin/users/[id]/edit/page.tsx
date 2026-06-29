@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import type { UserRecord, AppRole } from '@/lib/types'
 
-const roles: { value: AppRole; label: string }[] = [
+const allRoles: { value: AppRole; label: string }[] = [
   { value: 'CUSTOMER', label: 'Customer' },
   { value: 'DELIVERY_BOY', label: 'Delivery Boy' },
   { value: 'RESTAURANT_OWNER', label: 'Restaurant Owner' },
@@ -34,6 +34,7 @@ export default function EditUserPage() {
     email: '',
     phone: '',
     role: 'CUSTOMER' as AppRole,
+    selectedRoles: ['CUSTOMER'] as AppRole[],
     status: 'ACTIVE' as string,
   })
 
@@ -45,11 +46,13 @@ export default function EditUserPage() {
         return res.json()
       })
       .then((user: UserRecord) => {
+        const roles = (user.roles?.length ? user.roles : [user.role]) as AppRole[]
         setForm({
           username: user.username,
           email: user.email,
           phone: user.phone || '',
           role: user.role,
+          selectedRoles: roles,
           status: user.status,
         })
       })
@@ -66,7 +69,14 @@ export default function EditUserPage() {
       const res = await fetch(`/api/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          username: form.username,
+          email: form.email,
+          phone: form.phone,
+          role: form.role,
+          roles: form.selectedRoles,
+          status: form.status,
+        }),
       })
 
       const data = await res.json()
@@ -113,7 +123,7 @@ export default function EditUserPage() {
         </Link>
         <h2 className="text-2xl font-bold text-base-content mt-2">Edit User</h2>
         <p className="text-sm text-base-content/60 mt-1">
-          Update user details, role, or status
+          Update user details, roles, or status
         </p>
       </div>
 
@@ -168,36 +178,73 @@ export default function EditUserPage() {
           />
         </label>
 
-        {/* Role & Status */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">
-              <span className="label-text">Role *</span>
-            </label>
-            <select
-              value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as AppRole })}
-              className="select select-bordered w-full"
-            >
-              {roles.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
+        {/* Roles — Multi-Select */}
+        <div>
+          <label className="label">
+            <span className="label-text">Roles</span>
+            <span className="label-text-alt text-base-content/50">
+              {form.selectedRoles.length} selected
+            </span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            {allRoles.map((r) => {
+              const isSelected = form.selectedRoles.includes(r.value)
+              return (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => {
+                    let updated: AppRole[]
+                    if (isSelected) {
+                      if (form.selectedRoles.length <= 1) return
+                      updated = form.selectedRoles.filter((v) => v !== r.value)
+                    } else {
+                      updated = [...form.selectedRoles, r.value]
+                    }
+                    setForm({
+                      ...form,
+                      selectedRoles: updated,
+                      role: updated[0],
+                    })
+                  }}
+                  className={`card border-2 text-left transition-all p-3 ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                      : 'border-base-300 hover:border-base-content/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      className="checkbox checkbox-primary checkbox-sm"
+                    />
+                    <p className="font-semibold text-sm text-base-content">{r.label}</p>
+                  </div>
+                </button>
+              )
+            })}
           </div>
-          <div>
-            <label className="label">
-              <span className="label-text">Status *</span>
-            </label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              className="select select-bordered w-full"
-            >
-              {statuses.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
+          <p className="text-xs text-base-content/40 mt-2">
+            Primary role: <strong>{form.role}</strong> (first selected).
+          </p>
+        </div>
+
+        {/* Status */}
+        <div>
+          <label className="label">
+            <span className="label-text">Status *</span>
+          </label>
+          <select
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+            className="select select-bordered w-full"
+          >
+            {statuses.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* Submit */}

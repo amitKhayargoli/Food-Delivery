@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { AppRole } from '@/lib/types'
 
-const roles: { value: AppRole; label: string; description: string }[] = [
+const allRoles: { value: AppRole; label: string; description: string }[] = [
   { value: 'CUSTOMER', label: 'Customer', description: 'End user who orders food' },
   { value: 'DELIVERY_BOY', label: 'Delivery Boy', description: 'Delivers orders to customers' },
   { value: 'RESTAURANT_OWNER', label: 'Restaurant Owner', description: 'Manages restaurant & menu' },
@@ -20,6 +20,7 @@ export default function CreateUserPage() {
     phone: '',
     password: '',
     role: 'CUSTOMER' as AppRole,
+    selectedRoles: ['CUSTOMER'] as AppRole[],
   })
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -34,7 +35,10 @@ export default function CreateUserPage() {
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+        ...form,
+        roles: form.selectedRoles,
+      }),
       })
 
       const data = await res.json()
@@ -147,28 +151,62 @@ export default function CreateUserPage() {
           </label>
         </div>
 
-        {/* Role Selection */}
+        {/* Role Selection — Multi-Select */}
         <div>
           <label className="label">
-            <span className="label-text">Role *</span>
+            <span className="label-text">Roles *</span>
+            <span className="label-text-alt text-base-content/50">
+              {form.selectedRoles.length} selected
+            </span>
           </label>
           <div className="grid grid-cols-2 gap-3">
-            {roles.map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setForm({ ...form, role: r.value })}
-                className={`card border-2 text-left transition-all p-4 ${
-                  form.role === r.value
-                    ? 'border-primary bg-primary/5'
-                    : 'border-base-300 hover:border-base-content/30'
-                }`}
-              >
-                <p className="font-semibold text-sm text-base-content">{r.label}</p>
-                <p className="text-xs text-base-content/50 mt-0.5">{r.description}</p>
-              </button>
-            ))}
+            {allRoles.map((r) => {
+              const isSelected = form.selectedRoles.includes(r.value)
+              return (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => {
+                    let updated: AppRole[]
+                    if (isSelected) {
+                      // Don't allow removing the last role
+                      if (form.selectedRoles.length <= 1) return
+                      updated = form.selectedRoles.filter((v) => v !== r.value)
+                    } else {
+                      updated = [...form.selectedRoles, r.value]
+                    }
+                    setForm({
+                      ...form,
+                      selectedRoles: updated,
+                      // Keep role in sync: use the first selected as primary
+                      role: updated[0],
+                    })
+                  }}
+                  className={`card border-2 text-left transition-all p-4 ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                      : 'border-base-300 hover:border-base-content/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      className="checkbox checkbox-primary checkbox-sm"
+                    />
+                    <div>
+                      <p className="font-semibold text-sm text-base-content">{r.label}</p>
+                      <p className="text-xs text-base-content/50 mt-0.5">{r.description}</p>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
+          <p className="text-xs text-base-content/40 mt-2">
+            Primary role: <strong>{form.role}</strong> (first selected). Customer is included by default.
+          </p>
         </div>
 
         {/* Submit */}

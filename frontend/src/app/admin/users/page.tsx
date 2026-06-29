@@ -10,7 +10,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState<string>('')
+  const [roleFilter, setRoleFilter] = useState<AppRole | ''>('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -62,7 +62,8 @@ export default function UsersPage() {
       u.username.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
       (u.phone && u.phone.includes(q))
-    const matchesRole = !roleFilter || u.role === roleFilter
+    const userRoles: AppRole[] = (u.roles?.length ? u.roles : [u.role])
+    const matchesRole = !roleFilter || userRoles.includes(roleFilter)
     return matchesSearch && matchesRole
   })
 
@@ -100,7 +101,7 @@ export default function UsersPage() {
         </label>
         <select
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
+          onChange={(e) => setRoleFilter(e.target.value as AppRole | '')}
           className="select select-bordered w-44"
         >
           <option value="">All Roles</option>
@@ -189,14 +190,18 @@ export default function UsersPage() {
                     <td className="text-sm text-base-content/60">{user.email}</td>
                     <td className="text-sm text-base-content/50">{user.phone || '—'}</td>
                     <td>
-                      <span className={`badge px-3 py-1 rounded-full ${
-                        user.role === 'ADMIN' ? 'badge-error' :
-                        user.role === 'DELIVERY_BOY' ? 'badge-secondary' :
-                        user.role === 'RESTAURANT_OWNER' ? 'badge-warning' :
-                        'badge-success'
-                      }`}>
-                        {user.role}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {(user.roles?.length ? user.roles : [user.role]).map((r) => (
+                          <span key={r} className={`badge px-2 py-1 rounded-full text-xs ${
+                            r === 'ADMIN' ? 'badge-error' :
+                            r === 'DELIVERY_BOY' ? 'badge-secondary' :
+                            r === 'RESTAURANT_OWNER' ? 'badge-warning' :
+                            'badge-success'
+                          }`}>
+                            {r === 'RESTAURANT_OWNER' ? 'OWNER' : r}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td>
                       <div className="flex items-center gap-2">

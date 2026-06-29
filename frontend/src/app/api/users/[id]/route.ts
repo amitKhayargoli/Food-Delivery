@@ -13,7 +13,7 @@ export async function DELETE(
     // 1. Check if user exists
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, username, role')
+      .select('id, username, role, roles')
       .eq('id', id)
       .maybeSingle()
 
@@ -66,7 +66,7 @@ export async function GET(
 
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, username, email, phone, role, status, created_at, updated_at')
+      .select('id, username, email, phone, role, roles, status, created_at, updated_at')
       .eq('id', id)
       .single()
 
@@ -93,18 +93,19 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { username, email, phone, role, status } = body
+    const { username, email, phone, role, roles, status } = body
 
     console.log(`[RT-ADMIN] ✏️ PATCH /api/users/${id} requested`);
     console.log(`[RT-ADMIN]   └─ fields: ${Object.keys(body).filter(k => k !== 'updated_at').join(', ') || 'none'}`);
     if (role) console.log(`[RT-ADMIN]   └─ role change requested: → ${role}`);
+    if (roles) console.log(`[RT-ADMIN]   └─ roles array:`, roles);
     if (status) console.log(`[RT-ADMIN]   └─ status change requested: → ${status}`);
 
     // Validate at least one field is provided
-    if (!username && !email && !phone && !role && !status) {
+    if (!username && !email && !phone && !role && !roles && !status) {
       console.log(`[RT-ADMIN] ❌ No fields provided to update`);
       return NextResponse.json(
-        { error: 'At least one field (username, email, phone, role, status) must be provided' },
+        { error: 'At least one field (username, email, phone, role, roles, status) must be provided' },
         { status: 400 },
       )
     }
@@ -162,6 +163,7 @@ export async function PATCH(
     if (email !== undefined) updateData.email = email
     if (phone !== undefined) updateData.phone = phone
     if (role !== undefined) updateData.role = role
+    if (roles !== undefined) updateData.roles = roles
     if (status !== undefined) updateData.status = status
 
     console.log(`[RT-ADMIN]   └─ update payload:`, JSON.stringify(updateData));
@@ -170,7 +172,7 @@ export async function PATCH(
       .from('users')
       .update(updateData)
       .eq('id', id)
-      .select('id, username, email, phone, role, status, created_at, updated_at')
+      .select('id, username, email, phone, role, roles, status, created_at, updated_at')
       .single()
 
     if (error) {

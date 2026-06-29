@@ -265,14 +265,18 @@ export default function ApprovalsPage() {
                   <div className="flex-1 ml-4">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-base-content">{user.username}</p>
-                      <span className={`badge badge-sm px-3 rounded-full ${
-                        user.role === 'ADMIN' ? 'badge-error' :
-                        user.role === 'DELIVERY_BOY' ? 'badge-secondary' :
-                        user.role === 'RESTAURANT_OWNER' ? 'badge-warning' :
-                        'badge-success'
-                      }`}>
-                        {user.role}
-                      </span>
+                      <div className="flex gap-1 flex-wrap">
+                        {(user.roles?.length ? user.roles : [user.role]).map((r) => (
+                          <span key={r} className={`badge badge-sm px-2 rounded-full ${
+                            r === 'ADMIN' ? 'badge-error' :
+                            r === 'DELIVERY_BOY' ? 'badge-secondary' :
+                            r === 'RESTAURANT_OWNER' ? 'badge-warning' :
+                            'badge-success'
+                          }`}>
+                            {r === 'RESTAURANT_OWNER' ? 'OWNER' : r}
+                          </span>
+                        ))}
+                      </div>
                       <span className="badge badge-sm badge-warning px-3 rounded-full">PENDING</span>
                     </div>
                     <p className="text-xs text-base-content/60 mt-0.5">{user.email}</p>

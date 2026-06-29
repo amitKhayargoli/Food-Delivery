@@ -6,7 +6,7 @@ import type { CreateUserPayload, UserRecord } from '@/lib/types'
 export async function GET() {
   const { data: users, error } = await supabaseAdmin
     .from('users')
-    .select('id, username, email, phone, role, status, created_at, updated_at')
+    .select('id, username, email, phone, role, roles, status, created_at, updated_at')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -79,6 +79,9 @@ export async function POST(request: Request) {
   const requiresApproval = role === 'RESTAURANT_OWNER' || role === 'DELIVERY_BOY'
   const initialStatus = requiresApproval ? 'PENDING' : 'ACTIVE'
 
+  // Build roles array — use explicit roles if provided, else default to single-element array
+  const roles = body.roles?.length ? body.roles : [role]
+
   // 3. Upsert into public.users table
   const { data: user, error: upsertError } = await supabaseAdmin
     .from('users')
@@ -88,9 +91,10 @@ export async function POST(request: Request) {
       email,
       ...(phone ? { phone } : {}),
       role,
+      roles,
       status: initialStatus,
     }, { onConflict: 'id' })
-    .select('id, username, email, phone, role, status, created_at, updated_at')
+    .select('id, username, email, phone, role, roles, status, created_at, updated_at')
     .single()
 
   if (upsertError || !user) {
