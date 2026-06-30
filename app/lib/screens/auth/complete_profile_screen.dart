@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/custom_text_field.dart';
-import '../../widgets/primary_button.dart';
 import '../../navigation/app_navigation.dart';
 import 'login_screen.dart';
 
@@ -57,22 +56,30 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
     setState(() => _isLoading = true);
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.completeProfile(
-      phone: phone,
-      username: username,
-      token: widget.googleToken,
-      tempToken: widget.tempToken,
-    );
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.completeProfile(
+        phone: phone,
+        username: username,
+        token: widget.googleToken,
+        tempToken: widget.tempToken,
+      );
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-    if (authProvider.isAuthenticated) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const AppNavigation(role: 'USER'),
-        ),
+      if (authProvider.isAuthenticated) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const AppNavigation(role: 'USER'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
       );
     }
   }
@@ -277,15 +284,36 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                       SizedBox(
                         width: double.infinity,
                         height: 56,
-                        child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : PrimaryButton(
-                                text: 'Complete Profile',
-                                onPressed: () {
+                        child: ElevatedButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
                                   if (!_validatePhone()) return;
                                   _submitProfile();
                                 },
-                              ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF5222D),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              height: 1.50,
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Complete Profile'),
+                        ),
                       ),
                       const SizedBox(height: 20),
                       // Link to return to Login

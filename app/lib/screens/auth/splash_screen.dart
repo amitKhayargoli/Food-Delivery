@@ -32,7 +32,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (authProvider.isAuthenticated && authProvider.role != null) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => AppNavigation(role: authProvider.role!),
+          builder: (_) => AppNavigation(role: authProvider.activeRole),
         ),
       );
     } else {

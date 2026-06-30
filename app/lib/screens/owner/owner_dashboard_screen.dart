@@ -31,11 +31,33 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Timer? _searchDebounce;
   sb.RealtimeChannel? _orderChannel;
 
+  /// The restaurant's lat/lng, used for getNearbyRiders queries.
+  /// Fetched once from getMyApplication on init.
+  double? _restaurantLat;
+  double? _restaurantLng;
+  bool _isAssigning = false;
+
   @override
   void initState() {
     super.initState();
     _fetchOrders();
     _fetchRestaurantSettings();
+    _fetchRestaurantLocation();
+  }
+
+  /// Fetch the restaurant's stored lat/lng from the application record.
+  Future<void> _fetchRestaurantLocation() async {
+    final token = _token;
+    if (token == null) return;
+    try {
+      final app = await di.sl<ApiService>().getMyApplication(token: token);
+      if (app != null && mounted) {
+        setState(() {
+          _restaurantLat = (app['latitude'] as num?)?.toDouble();
+          _restaurantLng = (app['longitude'] as num?)?.toDouble();
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -92,7 +114,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   String? get _token => context.read<AuthProvider>().token;
 
   List<Order> get _newOrders =>
-      _allOrders.where((o) => o.status == OrderStatus.pending).toList();
+      _allOrders.where((o) => o.status == OrderStatus.created).toList();
 
   List<Order> get _preparingOrders => _allOrders
       .where((o) =>
@@ -101,7 +123,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       .toList();
 
   List<Order> get _readyOrders =>
-      _allOrders.where((o) => o.status == OrderStatus.ready).toList();
+      _allOrders.where((o) => o.status == OrderStatus.outForDelivery).toList();
 
   List<Order> get _currentOrders {
     if (_isSearching) return _searchResults;
@@ -221,6 +243,78 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       }
     } catch (_) {
       // Silently fail — user can pull-to-refresh
+    }
+  }
+
+  // ── Delivery boy assignment ────────────────────
+
+  /// Show a bottom sheet with available delivery boys, sorted by distance
+  /// if the restaurant has a registered location, or alphabetically otherwise.
+  Future<void> _showAssignDeliveryBoySheet(Order order) async {
+    final token = _token;
+    if (token == null) return;
+
+    // Show a loading sheet first
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return _AssignDeliveryBoySheet(
+          token: token,
+          restaurantLat: _restaurantLat,
+          restaurantLng: _restaurantLng,
+          onAssign: (riderId, riderName) async {
+            Navigator.pop(sheetContext);
+            await _assignDeliveryBoy(order, riderId, riderName);
+          },
+        );
+      },
+    );
+  }
+
+  /// Assign a delivery boy to an order via the API.
+  Future<void> _assignDeliveryBoy(Order order, String riderId, String riderName) async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isAssigning = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.assignDeliveryBoy(
+        orderId: order.id,
+        deliveryBoyId: riderId,
+        token: token,
+      );
+
+      setState(() => _isAssigning = false);
+      _fetchOrders();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Delivery boy assigned: $riderName'),
+            backgroundColor: const Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      setState(() => _isAssigning = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isAssigning = false);
     }
   }
 
@@ -1027,7 +1121,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     String label;
 
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         bgColor = const Color(0xFFFFF1F0);
         textColor = const Color(0xFFBB0018);
         label = 'New';
@@ -1039,7 +1133,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         bgColor = const Color(0xFFFFF8E1);
         textColor = const Color(0xFFF9A825);
         label = 'Preparing';
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         bgColor = const Color(0xFFE6F4EA);
         textColor = const Color(0xFF1E8E3E);
         label = 'Ready';
@@ -1055,10 +1149,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         bgColor = const Color(0xFFEFEDED);
         textColor = const Color(0xFF5E3F3C);
         label = 'Cancelled';
-      case OrderStatus.rejected:
-        bgColor = const Color(0xFFFFF1F0);
-        textColor = const Color(0xFFBB0018);
-        label = 'Rejected';
     }
 
     return Container(
@@ -1193,45 +1283,397 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         );
 
       case 2: // Ready
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE6F4EA),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color:          Color(0xFF1E8E3E), width: 0.5),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.check_circle,
-                  color: Color(0xFF1E8E3E), size: 20),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Ready for pickup / delivery',
-                  style: TextStyle(
-                    color: Color(0xFF1A1C1C),
+        final bool isAssigned = order.deliveryBoyId != null && order.deliveryBoyId!.isNotEmpty;
+        final String? riderName = order.deliveryBoyName;
+
+        return Column(
+          children: [
+            // ── Status card ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isAssigned
+                    ? const Color(0xFFE8F0FE)
+                    : const Color(0xFFE6F4EA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isAssigned
+                      ? const Color(0xFF1967D2)
+                      : const Color(0xFF1E8E3E),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isAssigned ? Icons.moped_rounded : Icons.check_circle,
+                    color: isAssigned ? const Color(0xFF1967D2) : const Color(0xFF1E8E3E),
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isAssigned && riderName != null
+                          ? 'Assigned to $riderName'
+                          : 'Ready for pickup / delivery',
+                      style: const TextStyle(
+                        color: Color(0xFF1A1C1C),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        height: 1.29,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    order.readyAt != null
+                        ? _timeAgo(order.readyAt!)
+                        : 'Just now',
+                    style: const TextStyle(
+                      color: Color(0xFF5C5C5C),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      height: 1.38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Assign / Reassign button ──
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isAssigning
+                    ? null
+                    : () => _showAssignDeliveryBoySheet(order),
+                icon: _isAssigning
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        isAssigned
+                            ? Icons.swap_horiz_rounded
+                            : Icons.person_add_alt_1_rounded,
+                        size: 20,
+                      ),
+                label: Text(
+                  isAssigned ? 'Reassign Delivery Boy' : 'Assign Delivery Boy',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                     height: 1.29,
                   ),
                 ),
-              ),
-              Text(
-                order.readyAt != null
-                    ? _timeAgo(order.readyAt!)
-                    : 'Just now',
-                style: const TextStyle(
-                  color: Color(0xFF5C5C5C),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  height: 1.38,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1967D2),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFEFEDED),
+                  disabledForegroundColor: const Color(0xFFBFBFBF),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         );
 
       default:
         return const SizedBox.shrink();
     }
-  }}
+  }
+}
+
+// ──────────────────────────────────────────────
+//  Assign Delivery Boy — bottom sheet widget
+// ──────────────────────────────────────────────
+
+/// Modal bottom sheet that fetches nearby/available delivery boys and
+/// lets the owner pick one to assign to an order.
+class _AssignDeliveryBoySheet extends StatefulWidget {
+  final String token;
+  final double? restaurantLat;
+  final double? restaurantLng;
+  final Future<void> Function(String riderId, String riderName) onAssign;
+
+  const _AssignDeliveryBoySheet({
+    required this.token,
+    this.restaurantLat,
+    this.restaurantLng,
+    required this.onAssign,
+  });
+
+  @override
+  State<_AssignDeliveryBoySheet> createState() => _AssignDeliveryBoySheetState();
+}
+
+class _AssignDeliveryBoySheetState extends State<_AssignDeliveryBoySheet> {
+  List<Map<String, dynamic>> _riders = [];
+  bool _isLoading = true;
+  String? _error;
+  bool _isAssigning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRiders();
+  }
+
+  Future<void> _fetchRiders() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      List<Map<String, dynamic>> riders;
+
+      // Prefer nearby (geo-sorted) if we have restaurant location
+      if (widget.restaurantLat != null && widget.restaurantLng != null) {
+        riders = await api.getNearbyRiders(
+          latitude: widget.restaurantLat!,
+          longitude: widget.restaurantLng!,
+          limit: 10,
+          token: widget.token,
+        );
+      } else {
+        // Fall back to listing all active delivery boys
+        riders = await api.getDeliveryBoys(token: widget.token);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _riders = riders;
+        _isLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load delivery boys.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _riderDisplayName(Map<String, dynamic> rider) {
+    return (rider['username'] as String? ?? '').isNotEmpty
+        ? rider['username'] as String
+        : 'Rider ${rider['user_id']?.toString().substring(0, 8) ?? ''}';
+  }
+
+  String _riderInfo(Map<String, dynamic> rider) {
+    final parts = <String>[];
+    final phone = rider['phone'] as String?;
+    if (phone != null && phone.isNotEmpty) parts.add(phone);
+    final distance = rider['distance_km'] as num?;
+    if (distance != null) {
+      parts.add('${distance.toStringAsFixed(1)} km away');
+    }
+    return parts.join(' • ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.65,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Handle ──
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // ── Title ──
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Icon(Icons.moped_rounded, size: 20, color: Color(0xFFBB0018)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Assign Delivery Boy',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1C1C),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                widget.restaurantLat != null
+                    ? 'Nearest available riders'
+                    : 'All available riders',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF8E8E93),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+
+            // ── Body ──
+            Flexible(
+              child: _buildBody(),
+            ),
+
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(48),
+        child: Center(
+          child: Column(
+            children: [
+              CircularProgressIndicator(color: Color(0xFFBB0018)),
+              SizedBox(height: 16),
+              Text(
+                'Finding nearby riders...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            const Icon(Icons.error_outline, size: 40, color: Color(0xFF8E8E93)),
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _fetchRiders,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_riders.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            const Icon(Icons.person_off_outlined, size: 40, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text(
+              'No riders available',
+              style: TextStyle(
+                color: Color(0xFF8E8E93),
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Ask riders to go online',
+              style: TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shrinkWrap: true,
+      itemCount: _riders.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
+      itemBuilder: (context, index) {
+        final rider = _riders[index];
+        final riderId = rider['user_id'] as String? ?? rider['id'] as String? ?? '';
+        final displayName = _riderDisplayName(rider);
+        final info = _riderInfo(rider);
+
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          leading: CircleAvatar(
+            backgroundColor: const Color(0xFFFFF1F0),
+            radius: 22,
+            child: const Icon(Icons.person, color: Color(0xFFBB0018), size: 22),
+          ),
+          title: Text(
+            displayName,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1C1C),
+            ),
+          ),
+          subtitle: info.isNotEmpty
+              ? Text(
+                  info,
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                )
+              : null,
+          trailing: _isAssigning
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.add_circle_outline,
+                  color: Color(0xFF1967D2), size: 22),
+          onTap: _isAssigning
+              ? null
+              : () async {
+                  setState(() => _isAssigning = true);
+                  await widget.onAssign(riderId, displayName);
+                },
+        );
+      },
+    );
+  }
+}

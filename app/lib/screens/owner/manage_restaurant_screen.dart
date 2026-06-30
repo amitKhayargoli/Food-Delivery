@@ -1,5 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:baato_maps/baato_maps.dart';
+// ignore: implementation_imports
+import 'package:baato_maps/src/map_core/implementation/baato_map_controller_impl.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../core/services/api_service.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
@@ -26,6 +31,26 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
   String? _closeTime;
   String? _logoUrl;
   String? _coverImageUrl;
+
+  // Restaurant location (lat/lng set via Baato map picker)
+  double? _restaurantLat;
+  double? _restaurantLng;
+  String _restaurantAddress = '';
+  bool _isPickingLocation = false;
+
+  // Baato map state
+  final BaatoMapController _mapController = BaatoMapControllerImpl();
+  final TextEditingController _searchController = TextEditingController();
+  List<BaatoSearchPlace> _searchResults = [];
+  bool _showSearchResults = false;
+  bool _isSearching = false;
+  bool _isMapLoading = true;
+  Timer? _searchDebounce;
+  Timer? _mapReadyTimer;
+
+  // Toggle states
+  bool _autoDispatchEnabled = false;
+  bool _isTogglingAutoDispatch = false;
 
   // Loading / error states
   bool _isLoadingInitial = true;
@@ -67,6 +92,9 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
     _emailCtrl.dispose();
     _addressCtrl.dispose();
     _descriptionCtrl.dispose();
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    _mapReadyTimer?.cancel();
     super.dispose();
   }
 
@@ -78,7 +106,8 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
   String _computeFormHash() {
     return '${_restaurantNameCtrl.text}|${_ownerNameCtrl.text}|${_phoneCtrl.text}|'
         '${_emailCtrl.text}|${_addressCtrl.text}|${_descriptionCtrl.text}|'
-        '$_selectedCuisine|$_openTime|$_closeTime|$_logoUrl|$_coverImageUrl';
+        '$_selectedCuisine|$_openTime|$_closeTime|$_logoUrl|$_coverImageUrl|'
+        '$_restaurantLat|$_restaurantLng|$_restaurantAddress';
   }
 
   bool get _hasUnsavedChanges => _computeFormHash() != _initialDataHash;
@@ -126,6 +155,13 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
         _logoUrl = app['logo_url'] as String?;
         _coverImageUrl = app['cover_image_url'] as String?;
 
+        // Restaurant location
+        _restaurantLat = (app['latitude'] as num?)?.toDouble();
+        _restaurantLng = (app['longitude'] as num?)?.toDouble();
+        _restaurantAddress = (app['address'] as String?) ?? '';
+
+        _autoDispatchEnabled = (app['auto_dispatch_enabled'] as bool?) ?? false;
+
         _originalApplication = app;
         _initialDataHash = _computeFormHash();
         _isLoadingInitial = false;
@@ -148,10 +184,17 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
   Future<void> _save() async {
     final token = _token;
     if (token == null) return;
+    final messenger = ScaffoldMessenger.of(context);
 
     // Validate
     if (_restaurantNameCtrl.text.trim().isEmpty) {
-      _showSnackBar('Restaurant name is required.');
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Restaurant name is required.'),
+          backgroundColor: Color(0xFF1E8E3E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
 
@@ -198,9 +241,22 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
       if (_coverImageUrl != (_originalApplication?['cover_image_url'] as String?)) {
         data['cover_image_url'] = _coverImageUrl;
       }
+      // Always include lat/lng if they've been set via the map picker
+      if (_restaurantLat != (_originalApplication?['latitude'] as num?)?.toDouble()) {
+        data['latitude'] = _restaurantLat;
+      }
+      if (_restaurantLng != (_originalApplication?['longitude'] as num?)?.toDouble()) {
+        data['longitude'] = _restaurantLng;
+      }
 
       if (data.isEmpty) {
-        _showSnackBar('No changes to save.');
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('No changes to save.'),
+            backgroundColor: Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         setState(() => _isSaving = false);
         return;
       }
@@ -215,7 +271,13 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
       });
 
       if (mounted) {
-        _showSnackBar('Restaurant profile updated successfully!');
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Restaurant profile updated successfully!'),
+            backgroundColor: Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } on ApiException catch (e) {
       setState(() {
@@ -228,16 +290,6 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
         _isSaving = false;
       });
     }
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFF1E8E3E),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   // ── Time picker helpers ──────────────────────
@@ -290,18 +342,19 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
   Future<bool> _onWillPop() async {
     if (!_hasUnsavedChanges) return true;
 
+    // ignore: use_build_context_synchronously
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Unsaved Changes'),
         content: const Text('You have unsaved changes. Are you sure you want to leave?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Stay'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(foregroundColor: const Color(0xFFBB0018)),
             child: const Text('Discard'),
           ),
@@ -319,9 +372,10 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
       canPop: !_hasUnsavedChanges,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final nav = Navigator.of(context);
         final shouldPop = await _onWillPop();
         if (shouldPop && mounted) {
-          Navigator.of(context).pop();
+          nav.pop();
         }
       },
       child: Scaffold(
@@ -513,6 +567,13 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
 
           const SizedBox(height: 32),
 
+          // ── Restaurant Location Section ──
+          _buildSectionHeader('Restaurant Location'),
+          const SizedBox(height: 12),
+          _buildRestaurantLocationSection(),
+
+          const SizedBox(height: 32),
+
           // ── Description Section ──
           _buildSectionHeader('Description'),
           const SizedBox(height: 12),
@@ -547,6 +608,43 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
               const SizedBox(width: 12),
               Expanded(child: _buildImageCard('Cover Image', _coverImageUrl, Icons.image_outlined)),
             ],
+          ),
+
+          const SizedBox(height: 40),
+
+          // ── Delivery Settings Section ──
+          _buildSectionHeader('Delivery Settings'),
+          const SizedBox(height: 12),
+          _buildAutoDispatchToggle(),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFFE082)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline, size: 16, color: Color(0xFFF9A825)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _autoDispatchEnabled
+                        ? 'When enabled, the nearest available rider will be automatically assigned when you mark an order as Ready.'
+                        : 'Enable auto-dispatch to automatically find and assign the nearest rider when an order is ready.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF795548),
+                      fontWeight: FontWeight.w400,
+                      height: 1.38,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 40),
@@ -786,5 +884,539 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
     return Center(
       child: Icon(icon, size: 32, color: const Color(0xFFBFBFBF)),
     );
+  }
+
+  // ── Restaurant Location Section ───────────────
+
+  Widget _buildRestaurantLocationSection() {
+    final hasLocation = _restaurantLat != null && _restaurantLng != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Location info card ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: hasLocation ? const Color(0xFFE6F4EA) : const Color(0xFFFFF1F0),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  hasLocation ? Icons.location_on_rounded : Icons.location_off_rounded,
+                  size: 22,
+                  color: hasLocation ? const Color(0xFF1E8E3E) : const Color(0xFFBB0018),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasLocation
+                          ? '${_restaurantLat!.toStringAsFixed(5)}, ${_restaurantLng!.toStringAsFixed(5)}'
+                          : 'No location set',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1C1C),
+                      ),
+                    ),
+                    if (_restaurantAddress.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _restaurantAddress,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8E8E93),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: 36,
+                child: TextButton(
+                  onPressed: () {
+                    final wasPicking = _isPickingLocation;
+                    setState(() => _isPickingLocation = !_isPickingLocation);
+                    // Auto-init GPS when opening the map for the first time
+                    if (!wasPicking && _restaurantLat == null) {
+                      _initMapLocation();
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFBB0018),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    _isPickingLocation ? 'Collapse' : (hasLocation ? 'Change' : 'Set'),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Map picker (collapsible) ──
+        if (_isPickingLocation) ...[
+          const SizedBox(height: 12),
+          Container(
+            height: 300,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                // Baato Map
+                BaatoMap(
+                  controller: _mapController,
+                  style: BaatoMapStyle.breeze,
+                  initialPosition: hasLocation
+                      ? BaatoCoordinate(latitude: _restaurantLat!, longitude: _restaurantLng!)
+                      : BaatoCoordinate(latitude: 27.7172, longitude: 85.3240),
+                  initialZoom: 15.0,
+                  myLocationEnabled: true,
+                  onMapCreated: (_) {
+                    _mapReadyTimer = Timer(const Duration(milliseconds: 1200), () {
+                      if (mounted) setState(() => _isMapLoading = false);
+                    });
+                  },
+                  onMapClick: (point, coordinate, features) {
+                    _onMapTapped(coordinate);
+                  },
+                ),
+
+                // Map loading overlay
+                if (_isMapLoading)
+                  Container(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFFBB0018)),
+                          SizedBox(height: 8),
+                          Text('Loading map...',
+                              style: TextStyle(color: Color(0xFF8E8E93), fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Center pin
+                if (!_isMapLoading)
+                  const IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            color: Color(0xFFBB0018),
+                            size: 36,
+                          ),
+                          SizedBox(height: 36),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Search bar at top
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  right: 8,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Material(
+                        elevation: 4,
+                        borderRadius: BorderRadius.circular(10),
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: _onSearchChanged,
+                          decoration: InputDecoration(
+                            hintText: 'Search location...',
+                            hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+                            prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF8E8E93)),
+                            suffixIcon: _isSearching
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFBB0018), width: 1.5),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+
+                      // Search results
+                      if (_showSearchResults)
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          margin: const EdgeInsets.only(top: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            )],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              itemCount: _searchResults.length,
+                              itemBuilder: (context, index) {
+                                final place = _searchResults[index];
+                                return InkWell(
+                                  onTap: () => _onSearchResultTapped(place),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.location_on_outlined,
+                                            size: 16, color: Color(0xFF8E8E93)),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(place.name,
+                                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                                              if (place.address.isNotEmpty)
+                                                Text(place.address,
+                                                    style: const TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
+                                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tap the map or search to set your restaurant\'s location. Used to find nearby riders.',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Baato Search & Map Handlers ──────────────
+
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _showSearchResults = false;
+        _isSearching = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(query.trim());
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isSearching = true);
+    try {
+      final coord = BaatoCoordinate(
+        latitude: _restaurantLat ?? 27.7172,
+        longitude: _restaurantLng ?? 85.3240,
+      );
+      final response = await Baato.api.place.search(query, currentCoordinate: coord, limit: 5);
+      final results = response.data ?? [];
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _showSearchResults = results.isNotEmpty;
+        _isSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchResults = [];
+        _showSearchResults = false;
+        _isSearching = false;
+      });
+    }
+  }
+
+  Future<void> _onSearchResultTapped(BaatoSearchPlace place) async {
+    setState(() {
+      _showSearchResults = false;
+      _isSearching = true;
+    });
+    _searchController.text = place.name;
+    try {
+      final detailResponse = await Baato.api.place.getDetail(place.placeId);
+      if (!mounted) return;
+      final detailData = detailResponse.data;
+      if (detailData != null && detailData.isNotEmpty) {
+        final detail = detailData.first;
+        final coord = BaatoCoordinate(
+          latitude: detail.centroid.latitude,
+          longitude: detail.centroid.longitude,
+        );
+        _mapController.cameraManager.moveTo(coord, zoom: 16.0, animate: true);
+        await _updateLocation(coord, label: detail.name.isNotEmpty ? detail.name : detail.address);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isSearching = false);
+  }
+
+  void _onMapTapped(BaatoCoordinate coordinate) {
+    _searchController.clear();
+    setState(() => _showSearchResults = false);
+    _mapController.cameraManager.moveTo(coordinate, zoom: 15.0, animate: true);
+    _updateLocation(coordinate);
+  }
+
+  Future<void> _updateLocation(BaatoCoordinate coordinate, {String? label}) async {
+    setState(() {
+      _restaurantLat = coordinate.latitude;
+      _restaurantLng = coordinate.longitude;
+      _restaurantAddress = label ?? '';
+    });
+
+    if (label != null) return;
+
+    // Reverse geocode for address
+    try {
+      final response = await Baato.api.place.reverseGeocode(coordinate, limit: 1);
+      if (!mounted) return;
+      final places = response.data;
+      if (places != null && places.isNotEmpty) {
+        final first = places.first;
+        setState(() {
+          _restaurantAddress = first.name.isNotEmpty ? first.name : first.address;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _initMapLocation() async {
+    // If no location is set yet, try GPS
+    if (_restaurantLat != null) return;
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      if (!mounted || _restaurantLat != null) return;
+      final coord = BaatoCoordinate(latitude: position.latitude, longitude: position.longitude);
+      await _updateLocation(coord);
+    } catch (_) {}
+  }
+
+  // ── Auto-Dispatch Toggle ─────────────────────
+
+  Widget _buildAutoDispatchToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _autoDispatchEnabled
+                  ? const Color(0xFFE6F4EA)
+                  : const Color(0xFFF0F0F0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.route_rounded,
+              size: 22,
+              color: _autoDispatchEnabled
+                  ? const Color(0xFF1E8E3E)
+                  : const Color(0xFF8E8E93),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Auto-Assign Delivery Boy',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1C1C),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _autoDispatchEnabled
+                      ? 'Nearest rider assigned automatically'
+                      : 'Manual assignment',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _isTogglingAutoDispatch
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : GestureDetector(
+                  onTap: _toggleAutoDispatch,
+                  child: Container(
+                    width: 48,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: _autoDispatchEnabled
+                          ? const Color(0xFF1E8E3E)
+                          : const Color(0xFFE5E7EB),
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: AnimatedAlign(
+                      duration: const Duration(milliseconds: 200),
+                      alignment: _autoDispatchEnabled
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x1A000000),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  /// Toggle auto-dispatch on/off via API with optimistic UI.
+  Future<void> _toggleAutoDispatch() async {
+    final token = _token;
+    if (token == null) return;
+
+    final newValue = !_autoDispatchEnabled;
+    setState(() => _isTogglingAutoDispatch = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.toggleAutoDispatch(enabled: newValue, token: token);
+      if (mounted) {
+        setState(() {
+          _autoDispatchEnabled = newValue;
+          _isTogglingAutoDispatch = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newValue
+                  ? 'Auto-dispatch enabled'
+                  : 'Auto-dispatch disabled',
+            ),
+            backgroundColor: const Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _isTogglingAutoDispatch = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isTogglingAutoDispatch = false);
+      }
+    }
   }
 }

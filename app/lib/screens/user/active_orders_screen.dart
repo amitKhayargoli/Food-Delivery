@@ -108,21 +108,30 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
         _orders = rawOrders.map((o) => Order.fromJson(o)).toList();
         _isLoading = false;
       });
-      // Subscribe to real-time updates after successful fetch
-      final userId = _userId;
-      if (userId != null) _subscribeToOrders(userId);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.message;
         _isLoading = false;
       });
+      return;
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load orders. Check your connection.';
         _isLoading = false;
       });
+      return;
+    }
+
+    // Subscribe to real-time updates — separate from the fetch try-catch
+    // so a subscription error never hides a successful order load.
+    if (!mounted) return;
+    try {
+      final userId = _userId;
+      if (userId != null) _subscribeToOrders(userId);
+    } catch (_) {
+      // Non-fatal — user can still see their orders
     }
   }
 
@@ -387,7 +396,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
     String label;
 
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         bgColor = const Color(0xFFFFF1F0);
         textColor = const Color(0xFFBB0018);
         label = 'Pending';
@@ -399,7 +408,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
         bgColor = const Color(0xFFFFF8E1);
         textColor = const Color(0xFFF9A825);
         label = 'Preparing';
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         bgColor = const Color(0xFFE6F4EA);
         textColor = const Color(0xFF1E8E3E);
         label = 'Ready';
@@ -415,10 +424,6 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
         bgColor = const Color(0xFFEFEDED);
         textColor = const Color(0xFF5E3F3C);
         label = 'Cancelled';
-      case OrderStatus.rejected:
-        bgColor = const Color(0xFFFFF1F0);
-        textColor = const Color(0xFFBB0018);
-        label = 'Rejected';
     }
 
     return Container(

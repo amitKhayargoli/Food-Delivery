@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' hide Consumer;
-import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../models/order.dart';
 import '../../cart_provider.dart';
@@ -10,9 +9,8 @@ import '../../core/services/reorder_service.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
 import '../../state_providers.dart';
+import '../../widgets/delivery_location_header.dart';
 import 'restaurant_menu_screen.dart';
-import 'delivery_address_map_screen.dart';
-import 'selected_delivery_location.dart';
 
 class UserHomeScreen extends ConsumerStatefulWidget {
   const UserHomeScreen({super.key});
@@ -22,45 +20,21 @@ class UserHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
-  String _currentAddress = 'Jhamsikhel, Lalitpur';
   List<Order> _recentOrders = [];
-  bool _isLoadingHistory = true;
-  String? _historyError;
-
-  // Discount offers mapped by restaurant ID
-  static const Map<String, String> _restaurantDiscounts = {
-    'r1': 'Flat 30% OFF',
-    'r2': 'Flat 10% OFF',
-    'r3': 'Flat 20% OFF',
-  };
-
-  static const List<Map<String, dynamic>> _topPicks = [
-    {'name': 'Thai Delight', 'rating': 4.6, 'time': '28 mins', 'discount': 'Flat 25% OFF'},
-    {'name': 'Pasta Palace', 'rating': 4.5, 'time': '30 mins', 'discount': 'Flat 20% OFF'},
-    {'name': 'Noodle Bar', 'rating': 4.4, 'time': '22 mins', 'discount': 'Flat 30% OFF'},
-  ];
-
-  // Map top picks to actual restaurants
-  List<Restaurant> _getTopPickRestaurants() {
-    return mockRestaurants.take(_topPicks.length).toList();
-  }
 
   String? get _token => context.read<AuthProvider>().token;
 
   @override
   void initState() {
     super.initState();
+    // Fetch restaurants from the API via the provider
+    ref.read(restaurantsProvider).fetchRestaurants();
     _fetchOrderHistory();
   }
 
   Future<void> _fetchOrderHistory() async {
     final token = _token;
-    if (token == null) {
-      setState(() {
-        _isLoadingHistory = false;
-      });
-      return;
-    }
+    if (token == null) return;
 
     try {
       final api = di.sl<ApiService>();
@@ -73,23 +47,32 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
               .where((o) => o.status == OrderStatus.delivered)
               .take(3)
               .toList();
-          _isLoadingHistory = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingHistory = false;
-          _historyError = e.toString();
-        });
-      }
+      // Silently ignore order history errors — not critical for the home screen
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final topPickRestaurants = _getTopPickRestaurants();
+    final restaurantsNotifier = ref.watch(restaurantsProvider);
+    final restaurantsState = restaurantsNotifier.state;
+    final allRestaurants = restaurantsState.restaurants;
+    final isLoading = restaurantsState.isLoading;
     final cartProvider = context.read<CartProvider>();
+
+    // Top picks = restaurants with highest rating, or all if fewer than 3
+    final topPicks = [...allRestaurants]
+      ..sort((a, b) => b.rating.compareTo(a.rating));
+    final displayTopPicks = topPicks.take(3).toList();
+
+    // Discount badges — random assignment for display
+    final discounts = <String, String>{
+      for (final r in allRestaurants)
+        r.id: ['Flat 30% OFF', 'Flat 20% OFF', 'Flat 10% OFF'][
+            allRestaurants.indexOf(r) % 3]
+    };
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
@@ -100,7 +83,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
             SliverPersistentHeader(
               pinned: true,
               delegate: _StickyHeaderDelegate(
-                child: _buildLocationHeader(context),
+                child: const DeliveryLocationHeader(),
               ),
             ),
 
@@ -115,24 +98,55 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                 // ── Promo Banner ──
                 _buildPromoBanner(context),
 
-                // ── New Near You Section ──
-                _buildSectionHeader(context, 'New Near You', onSeeAll: () {}),
-                _buildRestaurantHorizontalList(
-                  context,
-                  restaurants: mockRestaurants,
-                  discounts: _restaurantDiscounts,
-                ),
+                // ── Loading / Error / Restaurants ──
+                if (isLoading && allRestaurants.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator(color: Color(0xFFBB0018))),
+                  )
+                else if (restaurantsState.error != null && allRestaurants.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          const Icon(Icons.cloud_off, size: 40, color: Color(0xFF8E8E93)),
+                          const SizedBox(height: 12),
+                          Text(
+                            restaurantsState.error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => ref.read(restaurantsProvider).refresh(),
+                            child: const Text('Try Again'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else ...[
+                  // ── New Near You Section ──
+                  if (allRestaurants.isNotEmpty) ...[
+                    _buildSectionHeader(context, 'New Near You', onSeeAll: () {}),
+                    _buildRestaurantHorizontalList(
+                      context,
+                      restaurants: allRestaurants,
+                      discounts: discounts,
+                    ),
+                  ],
 
-                // ── Top Picks For You Section ──
-                _buildSectionHeader(context, 'Top Picks For You', onSeeAll: () {}),
-                _buildRestaurantHorizontalList(
-                  context,
-                  restaurants: topPickRestaurants,
-                  discounts: {
-                    for (int i = 0; i < topPickRestaurants.length; i++)
-                      topPickRestaurants[i].id: _topPicks[i]['discount'] as String,
-                  },
-                ),
+                  // ── Top Picks For You Section ──
+                  if (displayTopPicks.isNotEmpty) ...[
+                    _buildSectionHeader(context, 'Top Picks For You', onSeeAll: () {}),
+                    _buildRestaurantHorizontalList(
+                      context,
+                      restaurants: displayTopPicks,
+                      discounts: discounts,
+                    ),
+                  ],
+                ],
 
                 // ── Because You Ordered Section ──
                 if (_recentOrders.isNotEmpty) ...[
@@ -398,92 +412,6 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
             ),
             const Icon(Icons.replay_rounded,
                 size: 18, color: Color(0xFFBB0018)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────
-  // Location Header
-  // ──────────────────────────────────────────────
-
-  Widget _buildLocationHeader(BuildContext context) {
-    return GestureDetector(
-      onTap: () async {
-        final result = await Navigator.push<SelectedDeliveryLocation>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const DeliveryAddressMapScreen(),
-          ),
-        );
-        if (result != null && mounted) {
-          setState(() => _currentAddress = result.address);
-        }
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            bottom: BorderSide(color: Color(0xFFF0F0F0), width: 1),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5222D),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.location_on_outlined,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Delivering To',
-                    style: TextStyle(
-                      color: const Color(0xFF262626),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          _currentAddress,
-                          style: const TextStyle(
-                            color: Color(0xFF8C8C8C),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.keyboard_arrow_down,
-                        size: 18,
-                        color: Color(0xFF8C8C8C),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
