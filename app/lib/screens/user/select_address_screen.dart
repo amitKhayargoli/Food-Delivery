@@ -3,44 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:baato_maps/baato_maps.dart';
 // ignore: implementation_imports
 import 'package:baato_maps/src/map_core/implementation/baato_map_controller_impl.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../core/services/delivery_location_service.dart';
+import '../../injection_container.dart' as di;
+import '../../models/saved_address.dart';
+import '../../widgets/map_skeleton.dart';
+import '../../widgets/save_address_dialog.dart';
 import 'selected_delivery_location.dart';
-
-// ──────────────────────────────────────────────
-// Saved Address Model
-// ──────────────────────────────────────────────
-
-class _SavedAddress {
-  final String label;
-  final String address;
-  final double latitude;
-  final double longitude;
-  final IconData icon;
-
-  const _SavedAddress({
-    required this.label,
-    required this.address,
-    required this.latitude,
-    required this.longitude,
-    this.icon = Icons.home_outlined,
-  });
-}
-
-const List<_SavedAddress> _mockSavedAddresses = [
-  _SavedAddress(
-    label: 'Home',
-    address: 'Lakila, Bhaktapur',
-    latitude: 27.6760,
-    longitude: 85.4270,
-    icon: Icons.home_outlined,
-  ),
-  _SavedAddress(
-    label: 'Work',
-    address: 'Byasi, Bhaktapur',
-    latitude: 27.6833,
-    longitude: 85.4376,
-    icon: Icons.work_outline,
-  ),
-];
 
 // ──────────────────────────────────────────────
 // Constants
@@ -60,16 +29,21 @@ const double _mapHeight = 353.0;
 // ──────────────────────────────────────────────
 
 class SelectAddressScreen extends StatefulWidget {
-  const SelectAddressScreen({super.key});
+  final SelectedDeliveryLocation? initialLocation;
+
+  const SelectAddressScreen({super.key, this.initialLocation});
 
   @override
   State<SelectAddressScreen> createState() => _SelectAddressScreenState();
 }
 
-class _SelectAddressScreenState extends State<SelectAddressScreen> {
+class _SelectAddressScreenState extends State<SelectAddressScreen>
+    with TickerProviderStateMixin {
   final BaatoMapController _mapController = BaatoMapControllerImpl();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final DeliveryLocationService _locationService =
+      di.sl<DeliveryLocationService>();
 
   BaatoCoordinate _selectedCoordinate =
       BaatoCoordinate(latitude: 27.7172, longitude: 85.3240);
@@ -77,7 +51,49 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
   bool _isSearching = false;
   bool _showSearchResults = false;
   bool _hasSelected = false;
+  bool _isMapLoading = true;
+  BaatoCoordinate? _gpsCoordinate;
+  Timer? _mapReadyTimer;
+  late final DateTime _screenOpenedAt;
+  late final AnimationController _pinBounceController;
+  late final AnimationController _shimmerController;
+  late final AnimationController _locationPulseController;
   int? _selectedSavedIndex;
+  List<SavedAddress> _savedAddresses = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _screenOpenedAt = DateTime.now();
+    _pinBounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _locationPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+
+    // Restore saved location if provided
+    if (widget.initialLocation != null) {
+      _selectedCoordinate = BaatoCoordinate(
+        latitude: widget.initialLocation!.latitude,
+        longitude: widget.initialLocation!.longitude,
+      );
+      _currentAddress = widget.initialLocation!.address;
+      _hasSelected = true;
+    }
+
+    // Load persisted saved addresses
+    _savedAddresses = _locationService.loadSavedAddresses();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initCurrentLocation());
+  }
 
   List<BaatoSearchPlace> _searchResults = [];
   Timer? _searchDebounce;
@@ -87,6 +103,10 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
+    _pinBounceController.dispose();
+    _shimmerController.dispose();
+    _locationPulseController.dispose();
+    _mapReadyTimer?.cancel();
     super.dispose();
   }
 
@@ -184,7 +204,7 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
   // ── Saved Address ──
 
   void _onSavedAddressTapped(int index) {
-    final addr = _mockSavedAddresses[index];
+    final addr = _savedAddresses[index];
     setState(() {
       _selectedSavedIndex = index;
       _showSearchResults = false;
@@ -210,10 +230,41 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
     _searchController.clear();
     _searchFocusNode.unfocus();
 
-    // Use the map's current center coordinate as current location proxy.
-    // The map has myLocationEnabled: true so it already shows the blue dot.
-    final coord = _selectedCoordinate;
-    _onMapTapped(coord);
+    // If we already have a GPS coordinate, go there directly
+    if (_gpsCoordinate != null) {
+      _goToGpsLocation();
+      return;
+    }
+
+    // Otherwise fetch GPS now
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+
+      final coord = BaatoCoordinate(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      _gpsCoordinate = coord;
+
+      _mapController.cameraManager.moveTo(coord, zoom: 15.0, animate: true);
+      _updateLocation(coord);
+    } catch (_) {
+      // GPS unavailable
+    }
   }
 
   // ── Location Update ──
@@ -226,8 +277,6 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
 
     String address = label ??
         '${coordinate.latitude.toStringAsFixed(5)}, ${coordinate.longitude.toStringAsFixed(5)}';
-
-    await _addMarkerAt(coordinate);
 
     // Only reverse-geocode if no label was provided
     if (label == null) {
@@ -251,34 +300,180 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
         _currentAddress = address;
         _hasSelected = true;
       });
+      // Subtle pulse bounce: scale 1.0 → 1.15 → 1.0
+      _pinBounceController
+        ..stop()
+        ..value = 0.0;
+      _pinBounceController.forward().then((_) {
+        if (mounted) _pinBounceController.reverse();
+      });
     }
   }
 
-  Future<void> _addMarkerAt(BaatoCoordinate coordinate) async {
+  // ──────────────────────────────────────────────
+  // Current Location Initialisation
+  // ──────────────────────────────────────────────
+
+  Future<void> _initCurrentLocation() async {
     try {
-      await _mapController.markerManager.clearMarkers();
-      await _mapController.markerManager.addMarker(
-        BaatoSymbolOption(
-          geometry: coordinate,
-          textField: 'Delivery Location',
-          iconSize: 0.35,
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+
+      final coord = BaatoCoordinate(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      _gpsCoordinate = coord;
+
+      if (_hasSelected) return;
+
+      _mapController.cameraManager.moveTo(coord, zoom: 15.0, animate: true);
+      _updateLocation(coord);
+    } catch (_) {
+      // GPS unavailable — user can still tap the map to select a location
+    }
+  }
+
+  void _goToGpsLocation() {
+    if (_gpsCoordinate == null) return;
+    _mapController.cameraManager.moveTo(_gpsCoordinate!, zoom: 15.0, animate: true);
+    _updateLocation(_gpsCoordinate!);
+  }
+
+  // ── Edit / Delete Saved Address ──
+
+  void _refreshSavedAddresses() {
+    setState(() {
+      _savedAddresses = _locationService.loadSavedAddresses();
+    });
+  }
+
+  Future<void> _onEditSavedAddress(int index) async {
+    final addr = _savedAddresses[index];
+    final controller = TextEditingController(text: addr.label);
+
+    final newLabel = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Label'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'e.g. Home, Work, Gym',
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFF5222D),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (newLabel != null && newLabel.isNotEmpty) {
+      await _locationService.deleteSavedAddress(addr.label);
+      await _locationService.saveSavedAddress(
+        SavedAddress(
+          label: newLabel,
+          address: addr.address,
+          latitude: addr.latitude,
+          longitude: addr.longitude,
+          icon: SavedAddress.iconForLabel(newLabel),
         ),
       );
-    } catch (_) {}
+      _refreshSavedAddresses();
+    }
+  }
+
+  Future<void> _onDeleteSavedAddress(int index) async {
+    final addr = _savedAddresses[index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Address'),
+        content: Text('Remove "${addr.label}" from saved addresses?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFF5222D),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _locationService.deleteSavedAddress(addr.label);
+      _refreshSavedAddresses();
+    }
   }
 
   // ── Confirm ──
 
-  void _onDeliverHere() {
+  Future<void> _onDeliverHere() async {
     if (!_hasSelected) return;
-    Navigator.pop(
-      context,
-      SelectedDeliveryLocation(
-        address: _currentAddress,
-        latitude: _selectedCoordinate.latitude,
-        longitude: _selectedCoordinate.longitude,
-      ),
+
+    final location = SelectedDeliveryLocation(
+      address: _currentAddress,
+      latitude: _selectedCoordinate.latitude,
+      longitude: _selectedCoordinate.longitude,
     );
+
+    // Show save dialog
+    final result = await showSaveAddressDialog(
+      context,
+      currentAddress: _currentAddress,
+      latitude: _selectedCoordinate.latitude,
+      longitude: _selectedCoordinate.longitude,
+      existingAddresses: _savedAddresses,
+    );
+
+    // Save as named address if the user chose to
+    if (result != null && result.didSave && mounted) {
+      _locationService.saveSavedAddress(
+        SavedAddress(
+          label: result.label,
+          address: _currentAddress,
+          latitude: _selectedCoordinate.latitude,
+          longitude: _selectedCoordinate.longitude,
+          icon: SavedAddress.iconForLabel(result.label),
+        ),
+      );
+    }
+
+    if (mounted) {
+      Navigator.pop(context, location);
+    }
   }
 
   // ══════════════════════════════════════════════
@@ -296,18 +491,147 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
           SizedBox(
             width: double.infinity,
             height: _mapHeight,
-            child: BaatoMap(
-              controller: _mapController,
-              style: BaatoMapStyle.breeze,
-              initialPosition: _selectedCoordinate,
-              initialZoom: 15.0,
-              myLocationEnabled: true,
-              onMapCreated: (_) {
-                _addMarkerAt(_selectedCoordinate);
-              },
-              onMapClick: (point, coordinate, features) {
-                _onMapTapped(coordinate);
-              },
+            child: Stack(
+              children: [
+                BaatoMap(
+                  controller: _mapController,
+                  style: BaatoMapStyle.breeze,
+                  initialPosition: _selectedCoordinate,
+                  initialZoom: 15.0,
+                  myLocationEnabled: true,
+                  onMapCreated: (_) {
+                    // Adaptive skeleton timing:
+                    // The longer it took onMapCreated to fire, the slower the
+                    // connection — keep skeleton visible proportionally longer.
+                    if (mounted) {
+                      final elapsed = DateTime.now()
+                          .difference(_screenOpenedAt)
+                          .inMilliseconds;
+                      // buffer = clamp(elapsed * 0.5, 800ms, 2500ms)
+                      final buffer = (elapsed * 0.5).round().clamp(800, 2500);
+                      _mapReadyTimer =
+                          Timer(Duration(milliseconds: buffer), () {
+                        if (mounted) {
+                          _shimmerController.stop();
+                          setState(() => _isMapLoading = false);
+                        }
+                      });
+                    }
+                  },
+                  onMapClick: (point, coordinate, features) {
+                    _onMapTapped(coordinate);
+                  },
+                ),
+                // ── Pulsating Map Loading Skeleton ──
+                AnimatedOpacity(
+                  opacity: _isMapLoading ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 800),
+                  child: _isMapLoading
+                      ? IgnorePointer(                              child: AnimatedBuilder(
+                                animation: _shimmerController,
+                                builder: (context, _) {
+                                  final value = _shimmerController.value;
+                                  return SizedBox(
+                                    width: double.infinity,
+                                    height: _mapHeight,
+                                    child: CustomPaint(
+                                      painter: MapSkeletonPainter(
+                                        shimmerValue: value,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                // ── Pulsing current location ring (Google Maps style blue dot) ──
+                IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: AnimatedBuilder(
+                      animation: _locationPulseController,
+                      builder: (context, _) {
+                        final pulse = _locationPulseController.value;
+                        return Container(
+                          width: 80 + pulse * 40,
+                          height: 80 + pulse * 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue
+                                .withValues(alpha: 0.12 * (1.0 - pulse)),
+                            border: Border.all(
+                              color: Colors.blue
+                                  .withValues(alpha: 0.25 * (1.0 - pulse)),
+                              width: 2.0,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                // ── Center pin overlay (bounce animates on tap) ──
+                IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Pin icon with subtle bounce animation (pulse: 1.0→1.15→1.0)
+                        AnimatedBuilder(
+                          animation: _pinBounceController,
+                          builder: (context, child) {
+                            final scale = 1.0 + 0.15 * _pinBounceController.value;
+                            return Transform.scale(
+                              scale: scale,
+                              child: child,
+                            );
+                          },
+                          child: const Icon(
+                            Icons.location_on,
+                            color: _primaryRed,
+                            size: 34,
+                          ),
+                        ),
+                        const SizedBox(height: 34),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── GPS re-centre FAB ──
+                if (_gpsCoordinate != null &&
+                    (_selectedCoordinate.latitude !=
+                            _gpsCoordinate!.latitude ||
+                        _selectedCoordinate.longitude !=
+                            _gpsCoordinate!.longitude) &&
+                    !_isMapLoading)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: Material(
+                      elevation: 4,
+                      shape: const CircleBorder(),
+                      color: Colors.white,
+                      child: InkWell(
+                        onTap: _goToGpsLocation,
+                        customBorder: const CircleBorder(),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.my_location,
+                            color: Color(0xFF1A73E8),
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
 
@@ -675,6 +999,8 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
   // ══════════════════════════════════════════════
 
   Widget _buildSavedAddresses() {
+    if (_savedAddresses.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -691,12 +1017,12 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ...List.generate(_mockSavedAddresses.length, (i) {
-          final addr = _mockSavedAddresses[i];
+        ...List.generate(_savedAddresses.length, (i) {
+          final addr = _savedAddresses[i];
           final selected = _selectedSavedIndex == i;
           return Padding(
             padding: EdgeInsets.only(
-                bottom: i < _mockSavedAddresses.length - 1 ? 12 : 0),
+                bottom: i < _savedAddresses.length - 1 ? 12 : 0),
             child: _buildSavedAddressCard(i, addr, selected),
           );
         }),
@@ -705,7 +1031,7 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
   }
 
   Widget _buildSavedAddressCard(
-      int index, _SavedAddress addr, bool selected) {
+      int index, SavedAddress addr, bool selected) {
     return GestureDetector(
       onTap: () => _onSavedAddressTapped(index),
       child: Container(
@@ -776,7 +1102,7 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
             IconButton(
               icon: const Icon(Icons.edit_outlined, size: 20,
                   color: Color(0xFF9CA3AF)),
-              onPressed: () {},
+              onPressed: () => _onEditSavedAddress(index),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
@@ -785,7 +1111,7 @@ class _SelectAddressScreenState extends State<SelectAddressScreen> {
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 20,
                   color: Color(0xFF9CA3AF)),
-              onPressed: () {},
+              onPressed: () => _onDeleteSavedAddress(index),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),

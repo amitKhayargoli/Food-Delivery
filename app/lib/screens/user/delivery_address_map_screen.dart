@@ -5,20 +5,31 @@ import 'package:flutter/foundation.dart';
 import 'package:baato_maps/baato_maps.dart';
 // ignore: implementation_imports
 import 'package:baato_maps/src/map_core/implementation/baato_map_controller_impl.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../core/services/delivery_location_service.dart';
+import '../../injection_container.dart' as di;
+import '../../models/saved_address.dart';
+import '../../widgets/map_skeleton.dart';
+import '../../widgets/save_address_dialog.dart';
 import 'selected_delivery_location.dart';
 
 class DeliveryAddressMapScreen extends StatefulWidget {
-  const DeliveryAddressMapScreen({super.key});
+  final SelectedDeliveryLocation? initialLocation;
+
+  const DeliveryAddressMapScreen({super.key, this.initialLocation});
 
   @override
   State<DeliveryAddressMapScreen> createState() =>
       _DeliveryAddressMapScreenState();
 }
 
-class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
+class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen>
+    with TickerProviderStateMixin {
   static const Color _primaryColor = Color(0xFFF5222D);
 
   final BaatoMapController _controller = BaatoMapControllerImpl();
+  final DeliveryLocationService _locationService =
+      di.sl<DeliveryLocationService>();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   BaatoCoordinate _selectedCoordinate = BaatoCoordinate(
@@ -28,6 +39,45 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
   String _currentAddress = 'Search or tap the map to pin a location';
   bool _isLoadingAddress = false;
   bool _hasSelected = false;
+  bool _isMapLoading = true;
+  BaatoCoordinate? _gpsCoordinate;
+  Timer? _mapReadyTimer;
+  late final DateTime _screenOpenedAt;
+  late final AnimationController _pinBounceController;
+  late final AnimationController _shimmerController;
+  late final AnimationController _locationPulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _screenOpenedAt = DateTime.now();
+
+    // Restore previously selected location if provided
+    if (widget.initialLocation != null) {
+      _selectedCoordinate = BaatoCoordinate(
+        latitude: widget.initialLocation!.latitude,
+        longitude: widget.initialLocation!.longitude,
+      );
+      _currentAddress = widget.initialLocation!.address;
+      _hasSelected = true;
+    }
+
+    _pinBounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _locationPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initCurrentLocation());
+  }
 
   // Search state
   List<BaatoSearchPlace> _searchResults = [];
@@ -40,6 +90,10 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounce?.cancel();
+    _pinBounceController.dispose();
+    _shimmerController.dispose();
+    _locationPulseController.dispose();
+    _mapReadyTimer?.cancel();
     super.dispose();
   }
 
@@ -138,9 +192,6 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
     String address = label ??
         '${coordinate.latitude.toStringAsFixed(5)}, ${coordinate.longitude.toStringAsFixed(5)}';
 
-    // Update the marker on the map
-    await _addMarkerAt(coordinate);
-
     try {
       debugPrint('[BAATO REVERSE] Reverse geocoding: (${coordinate.latitude}, ${coordinate.longitude})');
       final stopwatch = Stopwatch()..start();
@@ -171,6 +222,13 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
         _isLoadingAddress = false;
         _hasSelected = true;
       });
+      // Subtle pulse bounce: scale 1.0 → 1.15 → 1.0
+      _pinBounceController
+        ..stop()
+        ..value = 0.0;
+      _pinBounceController.forward().then((_) {
+        if (mounted) _pinBounceController.reverse();
+      });
     }
   }
 
@@ -192,15 +250,81 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
         coord, label: place.name.isNotEmpty ? place.name : place.address);
   }
 
-  void _onConfirm() {
-    Navigator.pop(
-      context,
-      SelectedDeliveryLocation(
-        address: _currentAddress,
-        latitude: _selectedCoordinate.latitude,
-        longitude: _selectedCoordinate.longitude,
-      ),
+  Future<void> _onConfirm() async {
+    final location = SelectedDeliveryLocation(
+      address: _currentAddress,
+      latitude: _selectedCoordinate.latitude,
+      longitude: _selectedCoordinate.longitude,
     );
+
+    // Show save dialog
+    final result = await showSaveAddressDialog(
+      context,
+      currentAddress: _currentAddress,
+      latitude: _selectedCoordinate.latitude,
+      longitude: _selectedCoordinate.longitude,
+      existingAddresses: _locationService.loadSavedAddresses(),
+    );
+
+    // Save as named address if the user chose to
+    if (result != null && result.didSave && mounted) {
+      _locationService.saveSavedAddress(
+        SavedAddress(
+          label: result.label,
+          address: _currentAddress,
+          latitude: _selectedCoordinate.latitude,
+          longitude: _selectedCoordinate.longitude,
+          icon: SavedAddress.iconForLabel(result.label),
+        ),
+      );
+    }
+
+    if (mounted) {
+      Navigator.pop(context, location);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Current Location Initialisation
+  // ──────────────────────────────────────────────
+
+  Future<void> _initCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+
+      final coord = BaatoCoordinate(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      _gpsCoordinate = coord;
+
+      if (_hasSelected) return;
+
+      _controller.cameraManager.moveTo(coord, zoom: 15.0, animate: true);
+      _updateLocation(coord);
+    } catch (_) {
+      // GPS unavailable — user can still tap the map to select a location
+    }
+  }
+
+  void _goToGpsLocation() {
+    if (_gpsCoordinate == null) return;
+    _controller.cameraManager.moveTo(_gpsCoordinate!, zoom: 15.0, animate: true);
+    _updateLocation(_gpsCoordinate!);
   }
 
   // ──────────────────────────────────────────────
@@ -335,19 +459,55 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
             child: BaatoMap(
               controller: _controller,
               style: BaatoMapStyle.breeze,
-              initialPosition: BaatoCoordinate(
-                latitude: 27.7172,
-                longitude: 85.3240,
-              ),
+              initialPosition: _selectedCoordinate,
               initialZoom: 15.0,
               myLocationEnabled: true,
               onMapCreated: (controller) {
-                _addMarkerAt(_selectedCoordinate);
+                // Adaptive skeleton timing:
+                // The longer it took onMapCreated to fire, the slower the
+                // connection — keep skeleton visible proportionally longer.
+                if (mounted) {
+                  final elapsed =
+                      DateTime.now().difference(_screenOpenedAt).inMilliseconds;
+                  // buffer = clamp(elapsed * 0.5, 800ms, 2500ms)
+                  final buffer = (elapsed * 0.5).round().clamp(800, 2500);
+                  _mapReadyTimer = Timer(Duration(milliseconds: buffer), () {
+                    if (mounted) {
+                      _shimmerController.stop();
+                      setState(() => _isMapLoading = false);
+                    }
+                  });
+                }
               },
               onMapClick: (point, coordinate, features) {
                 _onMapTapped(coordinate);
               },
             ),
+          ),
+
+          // ── Pulsating Map Loading Skeleton ──
+          AnimatedOpacity(
+            opacity: _isMapLoading ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 800),
+            child: _isMapLoading
+                ? IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: _shimmerController,
+                      builder: (context, _) {
+                        final value = _shimmerController.value;
+                        return SizedBox(
+                          height: mapHeight,
+                          width: mapWidth,
+                          child: CustomPaint(
+                            painter: MapSkeletonPainter(
+                              shimmerValue: value,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
 
           // ── Custom Search Bar ──
@@ -563,40 +723,89 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
             ),
           ),
 
-          // ── Center pin (shown until user taps or searches) ──
-          if (!_hasSelected)
-            IgnorePointer(
-              child: Align(
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFCEAE0),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Tap on the map to pin a location',
-                        style: TextStyle(
-                          color: Color(0xFF6B3A22),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+          // ── Pulsing current location ring (Google Maps style blue dot) ──
+          // Expands & contracts in a slow 2s cycle behind the selection pin.
+          IgnorePointer(
+            child: Align(
+              alignment: Alignment.center,
+              child: AnimatedBuilder(
+                animation: _locationPulseController,
+                builder: (context, _) {
+                  final pulse = _locationPulseController.value;
+                  return Container(
+                    width: 80 + pulse * 40,
+                    height: 80 + pulse * 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.blue
+                          .withValues(alpha: 0.12 * (1.0 - pulse)),
+                      border: Border.all(
+                        color: Colors.blue
+                            .withValues(alpha: 0.25 * (1.0 - pulse)),
+                        width: 2.0,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    CustomPaint(
-                      size: const Size(12, 8),
-                      painter: _TrianglePainter(color: const Color(0xFFFCEAE0)),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // ── Center pin (always visible — bounce animates on tap) ──
+          IgnorePointer(
+            child: Align(
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Pin icon with subtle bounce animation (pulse: 1.0→1.15→1.0)
+                  AnimatedBuilder(
+                    animation: _pinBounceController,
+                    builder: (context, child) {
+                      final scale = 1.0 + 0.15 * _pinBounceController.value;
+                      return Transform.scale(
+                        scale: scale,
+                        child: child,
+                      );
+                    },
+                    child: const Icon(
+                      Icons.location_on,
+                      color: _primaryColor,
+                      size: 34,
                     ),
-                    const Icon(Icons.location_on, color: _primaryColor, size: 34),
-                    const SizedBox(height: 34),
-                  ],
+                  ),
+                  const SizedBox(height: 34),
+                ],
+              ),
+            ),
+          ),
+
+          // ── GPS re-centre FAB (appears when pinned location ≠ GPS location) ──
+          if (_gpsCoordinate != null &&
+              (_selectedCoordinate.latitude != _gpsCoordinate!.latitude ||
+                  _selectedCoordinate.longitude !=
+                      _gpsCoordinate!.longitude) &&
+              !_isMapLoading)
+            Positioned(
+              right: 16,
+              bottom: MediaQuery.of(context).size.height * 0.35,
+              child: Material(
+                elevation: 4,
+                shape: const CircleBorder(),
+                color: Colors.white,
+                child: InkWell(
+                  onTap: _goToGpsLocation,
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.my_location,
+                      color: Color(0xFF1A73E8),
+                      size: 24,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -676,7 +885,7 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
                         backgroundColor: _primaryColor,
                         disabledBackgroundColor: Colors.grey.shade300,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         elevation: 0,
                       ),
@@ -701,42 +910,4 @@ class _DeliveryAddressMapScreenState extends State<DeliveryAddressMapScreen> {
     );
   }
 
-  Future<void> _addMarkerAt(BaatoCoordinate coordinate) async {
-    try {
-      await _controller.markerManager.clearMarkers();
-      await _controller.markerManager.addMarker(
-        BaatoSymbolOption(
-          geometry: coordinate,
-          textField: 'Delivery Location',
-          iconSize: 0.35,
-        ),
-      );
-    } catch (_) {
-      // marker ops best-effort until map is fully loaded
-    }
-  }
-}
-
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-
-  _TrianglePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    path.moveTo(0, 0);
-    path.lineTo(size.width, 0);
-    path.lineTo(size.width / 2, size.height);
-    path.close();
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
