@@ -173,6 +173,64 @@ export async function notifyUser(
   }
 }
 
+/**
+ * Send a push notification for an incoming call.
+ * The callee is notified via FCM so the app can show an incoming call
+ * UI even if the app is in the background.
+ */
+export async function notifyIncomingCall(
+  userId: string,
+  supabaseAdmin: any,
+  payload: {
+    callerId: string;
+    callerName: string;
+    callId: string;
+    channelName: string;
+  },
+): Promise<void> {
+  try {
+    const { data: tokens, error } = await supabaseAdmin
+      .from('device_tokens')
+      .select('token')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[FCM] Failed to fetch device tokens for call:', error.message);
+      return;
+    }
+
+    if (!tokens || tokens.length === 0) {
+      debugLog('[FCM] No device tokens found for call notification to user', userId);
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      tokens.map((row: { token: string }) =>
+        sendPushNotification(row.token, {
+          title: `Incoming call from ${payload.callerName}`,
+          body: 'Someone is calling you on Dailo',
+          data: {
+            type: 'incoming_call',
+            caller_id: payload.callerId,
+            caller_name: payload.callerName,
+            call_id: payload.callId,
+            channel_name: payload.channelName,
+          },
+        }),
+      ),
+    );
+
+    const succeeded = results.filter(
+      (r) => r.status === 'fulfilled' && r.value,
+    ).length;
+    debugLog(
+      `[FCM] Call notification sent to user ${userId}: ${succeeded}/${tokens.length} tokens delivered`,
+    );
+  } catch (error) {
+    console.error('[FCM] notifyIncomingCall error:', error);
+  }
+}
+
 function debugLog(...args: any[]) {
   if (process.env.NODE_ENV !== 'production') {
     console.log(...args);

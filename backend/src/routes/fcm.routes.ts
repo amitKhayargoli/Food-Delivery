@@ -1,25 +1,8 @@
 import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
+import { getUserId } from '../utils/auth';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-
-interface JwtPayload {
-  id: string;
-}
-
-function getUserId(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as JwtPayload;
-    return payload.id;
-  } catch {
-    return null;
-  }
-}
 
 // ──────────────────────────────────────────────
 // POST /api/fcm/register-token
@@ -27,7 +10,7 @@ function getUserId(req: Request): string | null {
 // ──────────────────────────────────────────────
 router.post('/register-token', async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -61,6 +44,42 @@ router.post('/register-token', async (req: Request, res: Response): Promise<void
     res.status(200).json({ message: 'Token registered' });
   } catch (error) {
     console.error('[FCM] Register token error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ──────────────────────────────────────────────
+// POST /api/fcm/notify-call
+// Send an incoming call push notification to the callee.
+// Called by the Flutter app immediately after inserting a call record.
+// ──────────────────────────────────────────────
+router.post('/notify-call', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { calleeId, callerName, callId, channelName } = req.body;
+    if (!calleeId || !callerName || !callId || !channelName) {
+      res.status(400).json({ error: 'Missing required fields: calleeId, callerName, callId, channelName' });
+      return;
+    }
+
+    // Import notifyIncomingCall dynamically to avoid circular imports
+    const { notifyIncomingCall } = await import('../services/fcm.service');
+
+    await notifyIncomingCall(calleeId, supabase.admin, {
+      callerId: userId,
+      callerName,
+      callId,
+      channelName,
+    });
+
+    res.status(200).json({ message: 'Call notification sent' });
+  } catch (error) {
+    console.error('[FCM] Notify call error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

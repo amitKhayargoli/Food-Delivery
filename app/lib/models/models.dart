@@ -196,6 +196,9 @@ class Restaurant {
   final double rating;
   final int deliveryTimeMinutes;
   final List<Food> foods;
+  final String cuisineType;
+  final String address;
+  final bool isAcceptingOrders;
 
   Restaurant({
     required this.id,
@@ -206,5 +209,41 @@ class Restaurant {
     required this.rating,
     required this.deliveryTimeMinutes,
     required this.foods,
+    this.cuisineType = '',
+    this.address = '',
+    this.isAcceptingOrders = true,
   });
+
+  factory Restaurant.fromJson(Map<String, dynamic> json) {
+    final foodsRaw = json['foods'];
+    final List<Food> parsedFoods = foodsRaw is List
+        ? foodsRaw
+            .whereType<Map<String, dynamic>>()
+            .map((f) => Food.fromJson(f))
+            .toList()
+        : [];
+
+    return Restaurant(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      logoUrl: json['logo_url'] as String? ?? json['logoUrl'] as String? ?? '',
+      bannerUrl: json['banner_url'] as String? ??
+          json['bannerUrl'] as String? ??
+          json['cover_image_url'] as String? ??
+          '',
+      rating: (json['rating'] as num?)?.toDouble() ?? 4.5,
+      deliveryTimeMinutes: (json['delivery_time_minutes'] as num?)?.toInt() ??
+          (json['deliveryTimeMinutes'] as num?)?.toInt() ??
+          30,
+      foods: parsedFoods,
+      cuisineType: json['cuisine_type'] as String? ??
+          json['cuisineType'] as String? ??
+          '',
+      address: json['address'] as String? ?? '',
+      isAcceptingOrders: json['is_accepting_orders'] as bool? ??
+          json['isAcceptingOrders'] as bool? ??
+          true,
+    );
+  }
 }
