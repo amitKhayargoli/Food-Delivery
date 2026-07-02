@@ -1,25 +1,6 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-
-interface JwtPayload {
-  id: string;
-  role: string;
-}
-
-function getUserId(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as JwtPayload;
-    return payload.id;
-  } catch {
-    return null;
-  }
-}
+import { getUserId } from '../utils/auth';
 
 // ──────────────────────────────────────────────
 // GET /api/menu
@@ -27,7 +8,7 @@ function getUserId(req: Request): string | null {
 // ──────────────────────────────────────────────
 export const getMenuItems = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -72,7 +53,7 @@ export const getMenuItems = async (req: Request, res: Response): Promise<void> =
 // ──────────────────────────────────────────────
 export const getMenuItemById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -109,7 +90,7 @@ export const getMenuItemById = async (req: Request, res: Response): Promise<void
 // ──────────────────────────────────────────────
 export const createMenuItem = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -190,7 +171,7 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
 // ──────────────────────────────────────────────
 export const updateMenuItem = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -267,7 +248,7 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
 // ──────────────────────────────────────────────
 export const deleteMenuItem = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
@@ -313,7 +294,7 @@ export const deleteMenuItem = async (req: Request, res: Response): Promise<void>
 // ──────────────────────────────────────────────
 export const toggleAvailability = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Authentication required' });
       return;
