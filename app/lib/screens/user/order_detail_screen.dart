@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
-import '../../injection_container.dart' as di;
+import '../../widgets/rider_map_view.dart';
+import '../../providers/call_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../injection_container.dart' as di;
+import '../call/active_call_screen.dart';
 
-/// A shared order detail screen that works in two modes:\n/// - `isOwner = false` (default): read-only timeline, items, pricing, delivery info\n/// - `isOwner = true`: adds action buttons (accept/reject/prepare/ready) and delivery partner assignment
+/// Displays the full details of an order for the customer.
+/// Includes live rider tracking via Baato Map when a rider is assigned,
+/// and a rating prompt after delivery.
 class OrderDetailScreen extends StatefulWidget {
   final Order order;
   final bool isOwner;
@@ -25,474 +31,1002 @@ class OrderDetailScreen extends StatefulWidget {
 
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
   late Order _order;
-  bool _isLoadingAction = false;
-  Timer? _debounce;
-  sb.RealtimeChannel? _orderChannel;
+  bool _hasRated = false;
+  bool _isSubmittingRating = false;
+
+  // Live rider tracking
+  sb.RealtimeChannel? _riderLocationChannel;
+  RiderMapPoint? _liveRiderLocation;
+  bool _isSubscribed = false;
 
   @override
   void initState() {
     super.initState();
     _order = widget.order;
-    _subscribeToOrder();
+    _initRiderTracking();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
-    _unsubscribeFromOrder();
+    _unsubscribeFromRiderLocation();
     super.dispose();
   }
 
-  void _subscribeToOrder() {
-    _unsubscribeFromOrder();
-    _orderChannel = SupabaseClientService.client.channel('order-detail-${_order.id}');
+  // ── Live Rider Tracking ──────────────────────
 
-    _orderChannel!.onPostgresChanges(
-      event: sb.PostgresChangeEvent.update,
-      schema: 'public',
-      table: 'orders',
-      callback: (payload) {
-        final record = payload.newRecord;
-        if (record['id']?.toString() == _order.id) {
-          // Re-fetch the order details using the appropriate API
-          _refreshOrder();
-        }
-      },
-    );
+  /// Subscribe to the rider's live location via Supabase Realtime.
+  /// Only subscribes when a rider is assigned and the order is active.
+  void _initRiderTracking() {
+    final riderId = _order.deliveryBoyId;
+    if (riderId == null || riderId.isEmpty) return;
 
-    _orderChannel!.subscribe((status, [error]) {
-      debugPrint('[RT-OrderDetail] Channel status: $status');
-      if (error != null) debugPrint('[RT-OrderDetail] Error: $error');
-    });
+    final isActive = _order.status == OrderStatus.pickedUp ||
+        _order.status == OrderStatus.outForDelivery;
+    if (!isActive) return;
+
+    // Fetch initial rider position via REST
+    _fetchInitialRiderLocation(riderId);
+
+    // Subscribe to live updates
+    _subscribeToRiderLocation(riderId);
   }
 
-  void _unsubscribeFromOrder() {
-    if (_orderChannel != null) {
-      SupabaseClientService.client.removeChannel(_orderChannel!);
-      _orderChannel = null;
+  /// Fetch the rider's current location via REST (one-time initial fetch).
+  Future<void> _fetchInitialRiderLocation(String riderId) async {
+    try {
+      final token = context.read<AuthProvider>().token;
+      if (token == null) return;
+
+      final api = di.sl<ApiService>();
+      final location = await api.getRiderLocation(
+        riderId: riderId,
+        token: token,
+      );
+
+      if (location == null || !mounted) return;
+
+      final lat = location['latitude'] as num?;
+      final lng = location['longitude'] as num?;
+      if (lat == null || lng == null) return;
+
+      setState(() {
+        _liveRiderLocation = RiderMapPoint(
+          latitude: lat.toDouble(),
+          longitude: lng.toDouble(),
+          label: 'Rider',
+          type: RiderMapPointType.rider,
+        );
+      });
+    } catch (e) {
+      debugPrint('[RT-RiderLocation] Initial fetch failed: $e');
     }
   }
 
-  String? get _token => context.read<AuthProvider>().token;
+  void _subscribeToRiderLocation(String riderId) {
+    if (_isSubscribed) return;
+    _isSubscribed = true;
+
+    try {
+      _riderLocationChannel =
+          SupabaseClientService.client.channel('rider-location-$riderId');
+
+      _riderLocationChannel!.onPostgresChanges(
+        event: sb.PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'rider_locations',
+        callback: (payload) {
+          final record = payload.newRecord;
+          // Filter to this specific rider
+          if (record['user_id']?.toString() != riderId) return;
+          final lat = record['latitude'] as num?;
+          final lng = record['longitude'] as num?;
+          if (lat == null || lng == null) return;
+
+          if (mounted) {
+            setState(() {
+              _liveRiderLocation = RiderMapPoint(
+                latitude: lat.toDouble(),
+                longitude: lng.toDouble(),
+                label: 'Rider',
+                type: RiderMapPointType.rider,
+              );
+            });
+          }
+        },
+      );
+
+      _riderLocationChannel!.subscribe((status, [error]) {
+        debugPrint('[RT-RiderLocation] Channel status: $status');
+        if (error != null) {
+          debugPrint('[RT-RiderLocation] Error: $error');
+        }
+      });
+    } catch (e) {
+      debugPrint('[RT-RiderLocation] Setup error: $e');
+    }
+  }
+
+  void _unsubscribeFromRiderLocation() {
+    if (_riderLocationChannel != null) {
+      SupabaseClientService.client.removeChannel(_riderLocationChannel!);
+      _riderLocationChannel = null;
+    }
+    _isSubscribed = false;
+  }
+
+  /// Build the rider's avatar — shows uploaded photo or a letter fallback.
+  Widget _buildRiderAvatar({double size = 28}) {
+    final avatarUrl = _order.deliveryBoyAvatarUrl;
+
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return Image.network(
+        avatarUrl,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _defaultRiderAvatar(size: size),
+      );
+    }
+
+    return _defaultRiderAvatar(size: size);
+  }
+
+  Widget _defaultRiderAvatar({double size = 28}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F0),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Icon(Icons.person_outline,
+          size: 16, color: Color(0xFFBB0018)),
+    );
+  }
+
+  /// Estimate ETA text based on rough distance (placeholder — real ETA
+  /// requires Baato Directions API call).
+  String? _estimatedEtaText() {
+    if (_liveRiderLocation == null) return null;
+    if (_order.deliveryAddress?.latitude == null ||
+        _order.deliveryAddress?.longitude == null) {
+      return null;
+    }
+
+    // Rough Haversine-based time estimate: assume avg speed 20 km/h
+    const double avgSpeedKmh = 20.0;
+    final double lat1 = _liveRiderLocation!.latitude;
+    final double lon1 = _liveRiderLocation!.longitude;
+    final double lat2 = _order.deliveryAddress!.latitude!;
+    final double lon2 = _order.deliveryAddress!.longitude!;
+
+    const double R = 6371; // Earth radius in km
+    final double dLat = _deg2rad(lat2 - lat1);
+    final double dLon = _deg2rad(lon2 - lon1);
+    final double a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+    final double c = 2 * asin(sqrt(a));
+    final double distanceKm = R * c;
+
+    final int minutes = (distanceKm / avgSpeedKmh * 60).round();
+    if (minutes < 1) return 'Arriving now';
+    if (minutes < 60) return 'Rider is $minutes min away';
+    return 'Rider is ${minutes ~/ 60} h ${minutes % 60} min away';
+  }
+
+  double _deg2rad(double deg) => deg * (3.141592653589793 / 180.0);
+
+  // ── Rating ───────────────────────────────────
+
+  Future<void> _showRatingSheet() async {
+    if (!mounted) return;
+
+    int selectedRating = 0;
+    String? comment;
+    final TextEditingController commentCtrl = TextEditingController();
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Drag handle
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD9D9D9),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Rider avatar + name
+              if (_order.deliveryBoyName != null &&
+                  _order.deliveryBoyName!.isNotEmpty)
+                Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: _buildRiderAvatar(size: 48),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _order.deliveryBoyName!,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1C1C),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+
+              const Text(
+                'How was your delivery?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1C1C),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Rate your rider\'s service',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Star rating
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) {
+                  final starNum = index + 1;
+                  return GestureDetector(
+                    onTap: () => setSheetState(() => selectedRating = starNum),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        starNum <= selectedRating
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        size: 44,
+                        color: starNum <= selectedRating
+                            ? const Color(0xFFF9A825)
+                            : const Color(0xFFD9D9D9),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 20),
+
+              // Optional comment
+              TextField(
+                controller: commentCtrl,
+                maxLines: 3,
+                maxLength: 200,
+                decoration: InputDecoration(
+                  hintText: 'Share your experience (optional)',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFBB0018)),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFFAF9F9),
+                  contentPadding: const EdgeInsets.all(14),
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Submit button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: selectedRating == 0 || _isSubmittingRating
+                      ? null
+                      : () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFBB0018),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFEFEDED),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isSubmittingRating
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text(
+                          'Submit Rating',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == true && selectedRating > 0) {
+      comment = commentCtrl.text.trim();
+      await _submitRating(selectedRating, comment.isEmpty ? null : comment);
+    }
+    commentCtrl.dispose();
+  }
+
+  Future<void> _submitRating(int rating, String? comment) async {
+    final token = context.read<AuthProvider>().token;
+    final riderId = _order.deliveryBoyId;
+    if (token == null || riderId == null) return;
+
+    setState(() => _isSubmittingRating = true);
+    try {
+      final api = di.sl<ApiService>();
+      await api.submitRiderRating(
+        orderId: _order.id,
+        riderId: riderId,
+        rating: rating,
+        comment: comment,
+        token: token,
+      );
+      if (mounted) {
+        setState(() {
+          _hasRated = true;
+          _isSubmittingRating = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.thumb_up_alt_rounded, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('Thanks for your feedback!'),
+              ],
+            ),
+            backgroundColor: Color(0xFF1E8E3E),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _isSubmittingRating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSubmittingRating = false);
+    }
+  }
+
+  // ── Cancel Order ────────────────────────────
+
+  Future<void> _cancelOrder() async {
+    // Confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFF5222D), size: 24),
+            SizedBox(width: 10),
+            Text('Cancel Order?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to cancel this order?\n\n'
+          'If a rider is already assigned, they will be notified and this delivery will be removed from their queue.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Order',
+              style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF8E8E93))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, Cancel',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF5222D))),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.cancelOrder(orderId: _order.id, token: token);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Order cancelled successfully.'),
+            ],
+          ),
+          backgroundColor: Color(0xFF1E8E3E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.pop(context, true); // Return to orders list
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // ── Formatting ───────────────────────────────
 
   String _formatCurrency(double amount) {
     return 'Rs. ${amount.toStringAsFixed(0)}';
   }
 
-  String _formatDateTime(DateTime? dt) {
-    if (dt == null) return '';
-    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _refreshOrder() async {
-    final token = _token;
-    if (token == null) return;
-
-    try {
-      final api = di.sl<ApiService>();
-      final rawOrders = widget.isOwner
-          ? await api.getRestaurantOrders(token: token)
-          : await api.getMyOrders(token: token);
-      final updated = rawOrders
-          .map((o) => Order.fromJson(o))
-          .where((o) => o.id == _order.id)
-          .firstOrNull;
-      if (updated != null && mounted) {
-        setState(() => _order = updated);
-      }
-    } catch (_) {}
-  }
-
-  // ── Owner actions ──
-
-  Future<void> _acceptOrder() async {
-    final token = _token;
-    if (token == null) return;
-    setState(() => _isLoadingAction = true);
-    try {
-      await di.sl<ApiService>().acceptOrder(orderId: _order.id, token: token);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order accepted!'), behavior: SnackBarBehavior.floating),
-        );
-        _refreshOrder();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingAction = false);
+  String _statusLabel(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.created:
+        return 'Pending';
+      case OrderStatus.accepted:
+        return 'Order Accepted';
+      case OrderStatus.preparing:
+        return 'Preparing';
+      case OrderStatus.outForDelivery:
+        return 'Ready for Pickup';
+      case OrderStatus.pickedUp:
+        return 'Picked Up — On the way!';
+      case OrderStatus.delivered:
+        return 'Delivered 🎉';
+      case OrderStatus.cancelled:
+        return 'Cancelled';
     }
   }
 
-  Future<void> _rejectOrder() async {
-    final token = _token;
-    if (token == null) return;
-    setState(() => _isLoadingAction = true);
-    try {
-      await di.sl<ApiService>().rejectOrder(orderId: _order.id, token: token);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order rejected.'), behavior: SnackBarBehavior.floating),
-        );
-        _refreshOrder();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingAction = false);
+  Color _statusColor(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.created:
+        return const Color(0xFFF9A825);
+      case OrderStatus.accepted:
+        return const Color(0xFF1967D2);
+      case OrderStatus.preparing:
+        return const Color(0xFFF9A825);
+      case OrderStatus.outForDelivery:
+        return const Color(0xFF1E8E3E);
+      case OrderStatus.pickedUp:
+        return const Color(0xFF1967D2);
+      case OrderStatus.delivered:
+        return const Color(0xFF1E8E3E);
+      case OrderStatus.cancelled:
+        return const Color(0xFF8E8E93);
     }
   }
 
-  Future<void> _markAsPreparing() async {
-    final token = _token;
-    if (token == null) return;
-    setState(() => _isLoadingAction = true);
-    try {
-      await di.sl<ApiService>().markOrderAsPreparing(orderId: _order.id, token: token);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preparing!'), behavior: SnackBarBehavior.floating),
-        );
-        _refreshOrder();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingAction = false);
-    }
-  }
+  // ── Call Rider ───────────────────────────────
 
-  Future<void> _markAsReady() async {
-    final token = _token;
-    if (token == null) return;
-    setState(() => _isLoadingAction = true);
-    try {
-      await di.sl<ApiService>().markOrderAsReady(orderId: _order.id, token: token);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order ready!'), behavior: SnackBarBehavior.floating),
-        );
-        _refreshOrder();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingAction = false);
-    }
-  }
+  Future<void> _callRider() async {
+    if (_order.deliveryBoyId == null) return;
 
-  // ── Assign delivery boy ──
+    final userId = context.read<AuthProvider>().token;
+    if (userId == null) return;
 
-  Future<void> _showAssignDeliveryBoySheet() async {
-    final token = _token;
-    if (token == null) return;
+    final provider = context.read<CallProvider>();
+    final result = await provider.startCall(
+      calleeId: _order.deliveryBoyId!,
+      orderId: _order.id,
+    );
 
-    try {
-      final api = di.sl<ApiService>();
-      final boys = await api.getDeliveryBoys(token: token);
+    if (!mounted) return;
 
-      if (!mounted) return;
-
-      showModalBottomSheet(
-        context: context,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) => Container(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD9D9D9),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Assign Delivery Partner',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              if (boys.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      'No delivery partners available',
-                      style: TextStyle(color: Color(0xFF8E8E93)),
-                    ),
-                  ),
-                ),
-              ...boys.map((boy) => ListTile(
-                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0xFFE8F0FE),
-                      child: const Icon(Icons.person, color: Color(0xFF1967D2)),
-                    ),
-                    title: Text(
-                      boy['username'] as String? ?? 'Delivery Boy',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      '${boy['phone'] as String? ?? ''}  •  ${boy['email'] as String? ?? ''}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _assignDeliveryBoy(
-                          _order.id,
-                          boy['id'] as String,
-                          boy['username'] as String? ?? 'Partner',
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFBB0018),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: const Text('Assign', style: TextStyle(fontSize: 13)),
-                    ),
-                  )),
-            ],
-          ),
+    if (result.success) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ActiveCallScreen()),
+      );
+    } else if (result.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error!),
+          backgroundColor: Colors.red,
         ),
       );
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
     }
   }
 
-  Future<void> _assignDeliveryBoy(String orderId, String boyId, String boyName) async {
-    final token = _token;
-    if (token == null) return;
-    setState(() => _isLoadingAction = true);
-    try {
-      await di.sl<ApiService>().assignDeliveryBoy(
-        orderId: orderId,
-        deliveryBoyId: boyId,
-        token: token,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$boyName assigned to this order!'),
-            backgroundColor: const Color(0xFF1E8E3E),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _refreshOrder();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingAction = false);
-    }
-  }
+  // ── Build ────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final hasDeliveryBoy = _order.deliveryBoyId != null &&
+        _order.deliveryBoyId!.isNotEmpty;
+    final canCall = hasDeliveryBoy &&
+        (_order.status == OrderStatus.pickedUp ||
+            _order.status == OrderStatus.outForDelivery);
+    final showLiveMap = hasDeliveryBoy &&
+        (_order.status == OrderStatus.pickedUp ||
+            _order.status == OrderStatus.outForDelivery);
+    final showRatingPrompt = !_hasRated &&
+        _order.status == OrderStatus.delivered &&
+        hasDeliveryBoy;
+
+    final hasDropoffLocation =
+        _order.deliveryAddress?.latitude != null &&
+        _order.deliveryAddress?.longitude != null;
+
+    final etaText = _estimatedEtaText();
+
+    final canCancelOrder = _order.status != OrderStatus.delivered &&
+        _order.status != OrderStatus.cancelled &&
+        _order.status != OrderStatus.pickedUp;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFAF9F9),
       appBar: AppBar(
-        title: Text('#${_order.orderNumber}'),
+        title: Text(
+          'Order #${_order.orderNumber}',
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1A1C1C),
         elevation: 0.5,
       ),
-      body: _isLoadingAction
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFBB0018)))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Status Timeline ──
-                  _buildTimeline(),
-                  const SizedBox(height: 20),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Live Rider Tracking Map ──
+            if (showLiveMap && hasDropoffLocation && _liveRiderLocation != null)
+              _buildLiveTrackingCard(etaText),
 
-                  // ── Items ──
-                  _buildSectionTitle('Order Items'),
-                  const SizedBox(height: 8),
-                  ..._order.items.map((item) => _buildOrderItemRow(item)),
-
-                  const Divider(height: 24),
-
-                  // ── Pricing Summary ──
-                  _buildPriceRow('Subtotal', _order.subtotal),
-                  _buildPriceRow('Delivery Fee', _order.deliveryFee),
-                  const SizedBox(height: 4),
-                  _buildPriceRow('Total', _order.total, isBold: true, color: const Color(0xFFBB0018)),
-
-                  const SizedBox(height: 20),
-
-                  // ── Delivery Info ──
-                  if (_order.deliveryAddress?.fullAddress != null) ...[
-                    _buildInfoCard(
-                      icon: Icons.location_on_outlined,
-                      iconColor: const Color(0xFFF5222D),
-                      title: 'Delivery Address',
-                      subtitle: _order.deliveryAddress!.fullAddress!,
+            // ── Restaurant name ──
+            if (_order.restaurantName.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF1F0),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.storefront_rounded,
+                        size: 20,
+                        color: Color(0xFFBB0018),
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (_order.specialInstructions != null && _order.specialInstructions!.isNotEmpty) ...[
-                    _buildInfoCard(
-                      icon: Icons.info_outline,
-                      iconColor: const Color(0xFFF9A825),
-                      title: 'Special Instructions',
-                      subtitle: _order.specialInstructions!,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // ── Rider Note ──
-                  if (_order.riderNote != null && _order.riderNote!.isNotEmpty) ...[
-                    _buildRiderNoteCard(_order.riderNote!),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // ── Delivery Partner Info ──
-                  if (_order.deliveryBoyId != null)
-                    _buildInfoCard(
-                      icon: Icons.moped_rounded,
-                      iconColor: const Color(0xFF1967D2),
-                      title: 'Delivery Partner',
-                      subtitle: 'Assigned',
-                      trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE6F4EA),
-                          borderRadius: BorderRadius.circular(9999),
-                        ),
-                        child: const Text(
-                          'Active',
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Restaurant',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
+                            color: Color(0xFF8E8E93),
+                          ),
+                        ),
+                        Text(
+                          _order.restaurantName,
+                          style: const TextStyle(
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF1E8E3E),
+                            color: Color(0xFF1A1C1C),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Status card ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x141B1C1C),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _statusColor(_order.status).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _statusLabel(_order.status),
+                          style: TextStyle(
+                            color: _statusColor(_order.status),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
                           ),
                         ),
                       ),
+                      const Spacer(),
+                      Text(
+                        _formatCurrency(_order.total),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFF5222D),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_order.riderNote != null && _order.riderNote!.isNotEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F0FE),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF1967D2).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.chat_outlined,
+                              size: 14, color: Color(0xFF1967D2)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Rider: "${_order.riderNote}"',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF1967D2),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-
-                  const SizedBox(height: 24),
-
-                  // ── Action Buttons (owner only) ──
-                  if (widget.isOwner) _buildOwnerActions(),
                 ],
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            // ── Order items ──
+            const Text(
+              'Order Items',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A1C1C),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ..._order.items.map((item) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${item.quantity}x ${item.name}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1A1C1C),
+                          ),
+                        ),
+                        if (item.specialInstructions != null &&
+                            item.specialInstructions!.isNotEmpty)
+                          Text(
+                            item.specialInstructions!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8E8E93),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _formatCurrency(item.price * item.quantity),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1C1C),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+
+            const SizedBox(height: 20),
+
+            // ── Delivery info ──
+            if (_order.deliveryAddress?.fullAddress != null) ...[
+              const Text(
+                'Delivery Address',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1C1C),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        color: Color(0xFFF5222D), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _order.deliveryAddress!.fullAddress!,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
+            // ── Call Rider button ──
+            if (hasDeliveryBoy)
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: canCall ? _callRider : null,
+                  icon: Icon(
+                    canCall ? Icons.phone_rounded : Icons.phone_disabled_rounded,
+                    size: 20,
+                  ),
+                  label: Text(
+                    canCall ? 'Call Rider' : 'Rider assigned — wait for pickup',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: canCall
+                        ? const Color(0xFF34C759)
+                        : const Color(0xFFEFEDED),
+                    foregroundColor: canCall ? Colors.white : const Color(0xFFBFBFBF),
+                    disabledBackgroundColor: const Color(0xFFEFEDED),
+                    disabledForegroundColor: const Color(0xFFBFBFBF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: canCall ? 2 : 0,
+                  ),
+                ),
+              ),
+
+            // ── Cancel Order button ──
+            if (canCancelOrder)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: _cancelOrder,
+                    icon: const Icon(Icons.cancel_outlined, size: 20),
+                    label: const Text(
+                      'Cancel Order',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFF5222D),
+                      side: const BorderSide(color: Color(0xFFF5222D)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Rating Prompt ──
+            if (showRatingPrompt) ...[
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFF8E1), Color(0xFFFFFDF5)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFFE082)),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.emoji_emotions_outlined,
+                      size: 40,
+                      color: Color(0xFFF9A825),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Enjoyed your delivery?',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1C1C),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Rate your rider\'s service',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF795548),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: _showRatingSheet,
+                        icon: const Icon(Icons.star_rounded, size: 20),
+                        label: const Text(
+                          'Rate Delivery',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF9A825),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // ── Already rated indicator ──
+            if (_hasRated) ...[
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6F4EA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: const Color(0xFF1E8E3E).withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle,
+                        color: Color(0xFF1E8E3E), size: 22),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'You rated this delivery. Thanks for your feedback!',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF1E8E3E),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
     );
   }
 
-  // ── Timeline ──
-
-  Widget _buildTimeline() {
-    final steps = <StepData>[];
-
-    steps.add(StepData(
-      icon: Icons.receipt_long_rounded,
-      label: 'Order Placed',
-      timestamp: _formatDateTime(_order.createdAt),
-      isCompleted: true,
-    ));
-
-    if (_order.acceptedAt != null || _order.status.index <= OrderStatus.accepted.index) {
-      steps.add(StepData(
-        icon: Icons.check_circle_outline,
-        label: _order.status == OrderStatus.rejected ? 'Order Rejected' : 'Order Accepted',
-        timestamp: _formatDateTime(_order.acceptedAt),
-        isCompleted: _order.acceptedAt != null,
-        isError: _order.status == OrderStatus.rejected,
-      ));
-    }
-
-    if (_order.status == OrderStatus.preparing || _order.preparingAt != null ||
-        _order.status.index >= OrderStatus.ready.index) {
-      steps.add(StepData(
-        icon: Icons.kitchen_rounded,
-        label: 'Preparing',
-        timestamp: _formatDateTime(_order.preparingAt),
-        isCompleted: _order.preparingAt != null || _order.status == OrderStatus.preparing,
-      ));
-    }
-
-    if (_order.readyAt != null || _order.status.index >= OrderStatus.ready.index) {
-      steps.add(StepData(
-        icon: Icons.check_circle_outline,
-        label: 'Ready',
-        timestamp: _formatDateTime(_order.readyAt),
-        isCompleted: _order.readyAt != null || _order.status == OrderStatus.ready,
-      ));
-    }
-
-    if (_order.pickedUpAt != null || _order.status.index >= OrderStatus.pickedUp.index) {
-      steps.add(StepData(
-        icon: Icons.moped_rounded,
-        label: 'Picked Up',
-        timestamp: _formatDateTime(_order.pickedUpAt),
-        isCompleted: _order.pickedUpAt != null || _order.status == OrderStatus.pickedUp,
-      ));
-    }
-
-    if (_order.deliveredAt != null || _order.status == OrderStatus.delivered) {
-      steps.add(StepData(
-        icon: Icons.location_on_rounded,
-        label: 'Delivered',
-        timestamp: _formatDateTime(_order.deliveredAt),
-        isCompleted: _order.deliveredAt != null || _order.status == OrderStatus.delivered,
-      ));
-    }
-
-    if (_order.status == OrderStatus.cancelled) {
-      steps.add(StepData(
-        icon: Icons.cancel_rounded,
-        label: 'Cancelled',
-        timestamp: _formatDateTime(_order.cancelledAt),
-        isCompleted: true,
-        isError: true,
-      ));
-    }
-
+  /// A card showing the live rider tracking map with ETA and Call Rider.
+  Widget _buildLiveTrackingCard(String? etaText) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -501,413 +1035,161 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             color: Color(0x141B1C1C),
             blurRadius: 12,
             offset: Offset(0, 4),
-            spreadRadius: 0,
           ),
         ],
       ),
       child: Column(
-        children: steps.asMap().entries.map((entry) {
-          final i = entry.key;
-          final step = entry.value;
-          final isLast = i == steps.length - 1;
-          return _buildTimelineStep(step, isLast);
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildTimelineStep(StepData step, bool isLast) {
-    return IntrinsicHeight(
-      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Timeline indicator column
-          SizedBox(
-            width: 32,
-            child: Column(
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: step.isError
-                        ? const Color(0xFFFFF1F0)
-                        : step.isCompleted
-                            ? const Color(0xFFE6F4EA)
-                            : const Color(0xFFEFEDED),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1967D2),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    step.icon,
-                    size: 14,
-                    color: step.isError
-                        ? const Color(0xFFBB0018)
-                        : step.isCompleted
-                            ? const Color(0xFF1E8E3E)
-                            : const Color(0xFFBFBFBF),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Live Tracking',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1C1C),
                   ),
                 ),
-                if (!isLast)
-                  Expanded(
-                    child: Container(
-                      width: 2,
-                      color: step.isCompleted
-                          ? const Color(0xFF1E8E3E)
-                          : const Color(0xFFE8E8E8),
+                const Spacer(),
+                if (etaText != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F0FE),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      etaText,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1967D2),
+                      ),
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          // Content
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+
+          // ── Rider info (avatar + name) ──
+          if (_order.deliveryBoyName != null &&
+              _order.deliveryBoyName!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
                 children: [
-                  Text(
-                    step.label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: step.isCompleted
-                          ? const Color(0xFF1A1C1C)
-                          : const Color(0xFFBFBFBF),
-                    ),
+                  // Rider avatar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: _buildRiderAvatar(),
                   ),
-                  if (step.timestamp.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      step.timestamp,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF8E8E93),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _order.deliveryBoyName!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1C1C),
+                        ),
                       ),
-                    ),
-                  ],
+                      const Text(
+                        'Your rider',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF8E8E93)),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // ── Section title ──
+          const SizedBox(height: 8),
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: Color(0xFF1A1C1C),
-      ),
-    );
-  }
+          // ── Map ──
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(16)),
+            child: RiderMapView(
+              riderLocation: _liveRiderLocation!,
+              dropoffLocation: RiderMapPoint(
+                latitude: _order.deliveryAddress!.latitude!,
+                longitude: _order.deliveryAddress!.longitude!,
+                label: _order.deliveryAddress!.fullAddress ?? 'You',
+                type: RiderMapPointType.dropoff,
+              ),
+              etaText: etaText,
+              height: 220,
+              showEtaBar: false,
+            ),
+          ),
 
-  Widget _buildOrderItemRow(OrderItem item) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '${item.quantity}x ${item.name}',
-              style: const TextStyle(fontSize: 14, color: Color(0xFF1A1C1C)),
-            ),
-          ),
-          Text(
-            _formatCurrency(item.price * item.quantity),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1C1C),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPriceRow(String label, double value, {bool isBold = false, Color? color}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: isBold ? FontWeight.w600 : FontWeight.w400,
-              color: isBold ? const Color(0xFF1A1C1C) : const Color(0xFF5C5C5C),
-            ),
-          ),
-          Text(
-            _formatCurrency(value),
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
-              color: color ?? const Color(0xFF1A1C1C),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    Widget? trailing,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF0F0F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: iconColor, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
-                const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-          if (trailing != null) trailing,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRiderNoteCard(String note) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F0FE),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x331967D2)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0x1A1967D2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.chat_bubble_outline,
-                color: Color(0xFF1967D2), size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Your Rider Says',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF1967D2),
-                    fontWeight: FontWeight.w600,
+          // ── ETA bar (bottom) ──
+          if (etaText != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(16)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.access_time_rounded,
+                      size: 18, color: Color(0xFF1967D2)),
+                  const SizedBox(width: 8),
+                  Text(
+                    etaText,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1C1C),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '"$note"',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF1A1C1C),
-                    fontWeight: FontWeight.w500,
+                  const Spacer(),
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton.icon(
+                      onPressed: _order.deliveryBoyId != null
+                          ? _callRider
+                          : null,
+                      icon: const Icon(Icons.phone_rounded, size: 16),
+                      label: const Text('Call',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF34C759),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
-
-  // ── Owner actions ──
-
-  Widget _buildOwnerActions() {
-    if (_order.status == OrderStatus.delivered ||
-        _order.status == OrderStatus.cancelled ||
-        _order.status == OrderStatus.rejected) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Actions'),
-        const SizedBox(height: 12),
-        // Accept / Reject for PENDING
-        if (_order.status == OrderStatus.pending)
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionButton(
-                  label: 'Reject',
-                  color: const Color(0xFF5E3F3C),
-                  bgColor: Colors.white,
-                  borderColor: const Color(0xFFEFEDED),
-                  onTap: _rejectOrder,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: _buildActionButton(
-                  label: 'Accept Order',
-                  color: Colors.white,
-                  bgColor: const Color(0xFFBB0018),
-                  onTap: _acceptOrder,
-                ),
-              ),
-            ],
-          ),
-
-        // Start Preparing for ACCEPTED
-        if (_order.status == OrderStatus.accepted)
-          SizedBox(
-            width: double.infinity,
-            child: _buildActionButton(
-              label: 'Start Preparing',
-              color: Colors.white,
-              bgColor: const Color(0xFF1967D2),
-              icon: Icons.kitchen_rounded,
-              onTap: _markAsPreparing,
-            ),
-          ),
-
-        // Mark as Ready for PREPARING
-        if (_order.status == OrderStatus.preparing)
-          SizedBox(
-            width: double.infinity,
-            child: _buildActionButton(
-              label: 'Mark as Ready',
-              color: Colors.white,
-              bgColor: const Color(0xFF1E8E3E),
-              icon: Icons.check_circle_outline,
-              onTap: _markAsReady,
-            ),
-          ),
-
-        // Assign Delivery Partner for READY or PREPARING (if not already assigned)
-        if ((_order.status == OrderStatus.ready || _order.status == OrderStatus.preparing) &&
-            _order.deliveryBoyId == null) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: _buildActionButton(
-              label: 'Assign Delivery Partner',
-              color: Colors.white,
-              bgColor: const Color(0xFFF9A825),
-              icon: Icons.moped_rounded,
-              onTap: _showAssignDeliveryBoySheet,
-            ),
-          ),
-        ],
-
-        // Show assigned delivery partner info
-        if (_order.deliveryBoyId != null && _order.status != OrderStatus.ready && _order.status != OrderStatus.preparing)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE6F4EA),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF1E8E3E)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Color(0xFF1E8E3E), size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Delivery partner assigned',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildActionButton({
-    required String label,
-    required Color color,
-    required Color bgColor,
-    Color? borderColor,
-    IconData? icon,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      height: 44,
-      child: bgColor == Colors.white
-          ? OutlinedButton(
-              onPressed: onTap,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: color,
-                side: BorderSide(color: borderColor ?? const Color(0xFFEFEDED)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            )
-          : ElevatedButton.icon(
-              onPressed: onTap,
-              icon: icon != null ? Icon(icon, size: 18) : const SizedBox.shrink(),
-              label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: bgColor,
-                foregroundColor: color,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-            ),
-    );
-  }
-}
-
-class StepData {
-  final IconData icon;
-  final String label;
-  final String timestamp;
-  final bool isCompleted;
-  final bool isError;
-
-  StepData({
-    required this.icon,
-    required this.label,
-    this.timestamp = '',
-    this.isCompleted = false,
-    this.isError = false,
-  });
 }

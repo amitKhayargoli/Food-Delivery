@@ -1,13 +1,14 @@
+import 'dart:convert';
+
 /// Status of an order throughout its lifecycle
 enum OrderStatus {
-  pending('PENDING'),
+  created('CREATED'),
   accepted('ACCEPTED'),
   preparing('PREPARING'),
-  ready('READY'),
+  outForDelivery('OUT_FOR_DELIVERY'),
   pickedUp('PICKED_UP'),
   delivered('DELIVERED'),
-  cancelled('CANCELLED'),
-  rejected('REJECTED');
+  cancelled('CANCELLED');
 
   final String value;
   const OrderStatus(this.value);
@@ -15,7 +16,7 @@ enum OrderStatus {
   static OrderStatus fromString(String s) {
     return OrderStatus.values.firstWhere(
       (e) => e.value == s,
-      orElse: () => OrderStatus.pending,
+      orElse: () => OrderStatus.created,
     );
   }
 }
@@ -46,8 +47,8 @@ class OrderItem {
     return OrderItem(
       foodId: json['food_id'] as String? ?? json['foodId'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+      price: (json['unit_price'] as num?)?.toDouble() ?? (json['price'] as num?)?.toDouble() ?? 0.0,
+      quantity: (json['qty'] as num?)?.toInt() ?? (json['quantity'] as num?)?.toInt() ?? 1,
       imageUrl: json['image_url'] as String? ?? json['imageUrl'] as String?,
       size: json['size'] as String?,
       addOns: json['add_ons'] != null
@@ -118,6 +119,7 @@ class Order {
   final String id;
   final String userId;
   final String restaurantId;
+  final String restaurantName;
   final String orderNumber;
   final OrderStatus status;
   final List<OrderItem> items;
@@ -129,6 +131,8 @@ class Order {
   final String? specialInstructions;
   final int? estimatedPrepTime;
   final String? deliveryBoyId;
+  final String? deliveryBoyName;
+  final String? deliveryBoyAvatarUrl;
   final DateTime? assignedAt;
   final DateTime? acceptedAt;
   final DateTime? preparingAt;
@@ -145,6 +149,7 @@ class Order {
     required this.id,
     required this.userId,
     required this.restaurantId,
+    this.restaurantName = '',
     required this.orderNumber,
     required this.status,
     required this.items,
@@ -156,6 +161,8 @@ class Order {
     this.specialInstructions,
     this.estimatedPrepTime,
     this.deliveryBoyId,
+    this.deliveryBoyName,
+    this.deliveryBoyAvatarUrl,
     this.assignedAt,
     this.acceptedAt,
     this.preparingAt,
@@ -180,20 +187,19 @@ class Order {
       userId: json['user_id'] as String? ?? json['userId'] as String? ?? '',
       restaurantId:
           json['restaurant_id'] as String? ?? json['restaurantId'] as String? ?? '',
+      restaurantName: json['restaurant_name'] as String? ??
+          json['restaurantName'] as String? ?? '',
       orderNumber:
           json['order_number'] as String? ?? json['orderNumber'] as String? ?? '',
       status: OrderStatus.fromString(
-          json['status'] as String? ?? 'PENDING'),
+          json['status'] as String? ?? 'CREATED'),
       items: itemsList
           .map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
           .toList(),
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0.0,
       deliveryFee: (json['delivery_fee'] as num?)?.toDouble() ?? 0.0,
       total: (json['total'] as num?)?.toDouble() ?? 0.0,
-      deliveryAddress: json['delivery_address'] != null
-          ? OrderDeliveryAddress.fromJson(
-              json['delivery_address'] as Map<String, dynamic>)
-          : null,
+      deliveryAddress: _parseDeliveryAddress(json['delivery_address']),
       deliveryNotes:
           json['delivery_notes'] as String? ?? json['deliveryNotes'] as String?,
       specialInstructions: json['special_instructions'] as String? ??
@@ -202,6 +208,10 @@ class Order {
           (json['estimatedPrepTime'] as num?)?.toInt(),
       deliveryBoyId: json['delivery_boy_id'] as String? ??
           json['deliveryBoyId'] as String?,
+      deliveryBoyName: json['delivery_boy_name'] as String? ??
+          json['deliveryBoyName'] as String?,
+      deliveryBoyAvatarUrl: json['delivery_boy_avatar_url'] as String? ??
+          json['deliveryBoyAvatarUrl'] as String?,
       assignedAt: _parseDateTime(
           json['assigned_at'] as String? ?? json['assignedAt'] as String?),
       acceptedAt: _parseDateTime(
@@ -231,5 +241,31 @@ class Order {
   static DateTime? _parseDateTime(String? s) {
     if (s == null || s.isEmpty) return null;
     return DateTime.tryParse(s);
+  }
+
+  /// Parse `delivery_address` which may be a Map (already parsed by Supabase)
+  /// or a JSON string (if stored via `JSON.stringify` on the backend).
+  static OrderDeliveryAddress? _parseDeliveryAddress(dynamic value) {
+    if (value == null) return null;
+
+    Map<String, dynamic> map;
+    if (value is Map<String, dynamic>) {
+      map = value;
+    } else if (value is String && value.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(value);
+        if (parsed is Map<String, dynamic>) {
+          map = parsed;
+        } else {
+          return null;
+        }
+      } catch (_) {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    return OrderDeliveryAddress.fromJson(map);
   }
 }
