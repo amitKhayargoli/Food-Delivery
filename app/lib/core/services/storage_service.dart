@@ -10,6 +10,7 @@ class StorageService {
   static const String _panBucket = 'pan-certificates';
   static const String _imagesBucket = 'restaurant-images';
   static const String _foodImagesBucket = 'food-images';
+  static const String _avatarBucket = 'avatar-images';
 
   /// Upload a PAN certificate image through the backend proxy using multipart.
   /// Returns the public URL of the uploaded file.
@@ -59,6 +60,15 @@ class StorageService {
     required String token,
   }) async {
     return _uploadToBucket(_foodImagesBucket, filePath, token);
+  }
+
+  /// Upload a profile/avatar image to the avatar-images bucket.
+  /// Returns the public URL of the uploaded file.
+  Future<String> uploadProfilePicture({
+    required String filePath,
+    required String token,
+  }) async {
+    return _uploadToBucket(_avatarBucket, filePath, token);
   }
 
   /// Generic upload to any allowed bucket.
