@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/services/delivery_location_service.dart';
+import '../../injection_container.dart' as di;
 import '../../state_providers.dart';
 import 'select_address_screen.dart';
 import 'selected_delivery_location.dart';
@@ -15,6 +17,18 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   SelectedDeliveryLocation? _selectedAddress;
   final _deliveryNotesCtrl = TextEditingController();
+  late final DeliveryLocationService _locationService;
+
+  @override
+  void initState() {
+    super.initState();
+    _locationService = di.sl<DeliveryLocationService>();
+    // Restore the pinned location from SharedPreferences
+    final saved = _locationService.loadLocation();
+    if (saved != null) {
+      _selectedAddress = saved;
+    }
+  }
 
   @override
   void dispose() {
@@ -178,7 +192,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const PaymentScreen()),
+      MaterialPageRoute(
+        builder: (context) => PaymentScreen(
+          deliveryAddress: {
+            'full_address': _selectedAddress!.address,
+          },
+          deliveryNotes: _deliveryNotesCtrl.text.trim().isNotEmpty
+              ? _deliveryNotesCtrl.text.trim()
+              : null,
+        ),
+      ),
     );
   }
 
@@ -219,7 +242,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 final result = await Navigator.push<SelectedDeliveryLocation>(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const SelectAddressScreen(),
+                    builder: (context) => SelectAddressScreen(
+                      initialLocation: _selectedAddress,
+                    ),
                   ),
                 );
 
@@ -227,6 +252,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   setState(() {
                     _selectedAddress = result;
                   });
+                  _locationService.saveLocation(result);
                 }
               },
               child: Container(

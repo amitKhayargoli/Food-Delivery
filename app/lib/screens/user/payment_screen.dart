@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 import '../../state_providers.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
+import '../../providers/auth_provider.dart';
 import 'order_confirmed_screen.dart';
 
 class PaymentScreen extends ConsumerStatefulWidget {
-  const PaymentScreen({super.key});
+  final Map<String, dynamic>? deliveryAddress;
+  final String? deliveryNotes;
+
+  const PaymentScreen({
+    super.key,
+    this.deliveryAddress,
+    this.deliveryNotes,
+  });
 
   @override
   ConsumerState<PaymentScreen> createState() => _PaymentScreenState();
@@ -37,19 +48,59 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     ),
   ];
 
-  void _confirmOrder() {
+  Future<void> _confirmOrder() async {
     final cart = ref.read(cartStateProvider);
     final subtotal = cart.subtotal;
     final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
     final deliveryFee = restaurantIds.length * 50.0;
     final total = subtotal + deliveryFee;
 
-    ref.read(cartStateProvider.notifier).clearCart();
+    // Get the auth token
+    final token = context.read<AuthProvider>().token;
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to place an order.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-    final navigator = Navigator.of(context);
+    // Take the first restaurant (grouped orders not supported yet)
+    final firstItem = cart.items.values.first;
+    final restaurantId = firstItem.restaurantId;
 
-    Future.microtask(() {
-      navigator.pushReplacement(
+    // Build items payload matching what the backend expects
+    final itemsPayload = cart.items.values.map((item) => ({
+      'foodId': item.foodId,
+      'name': item.name,
+      'price': item.price,
+      'quantity': item.quantity,
+      if (item.imageUrl != null) 'imageUrl': item.imageUrl,
+      if (item.specialInstructions.isNotEmpty)
+        'specialInstructions': item.specialInstructions,
+    })).toList();
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.createOrder(
+        restaurantId: restaurantId,
+        items: itemsPayload,
+        subtotal: subtotal,
+        deliveryFee: deliveryFee,
+        total: total,
+        deliveryAddress: widget.deliveryAddress,
+        deliveryNotes: widget.deliveryNotes,
+        paymentMethod: _selectedMethod,
+        token: token,
+      );
+
+      // Order created successfully — clear cart and navigate
+      ref.read(cartStateProvider.notifier).clearCart();
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) => OrderConfirmedScreen(
             paymentMethod: _selectedMethod,
@@ -57,7 +108,23 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
           ),
         ),
       );
-    });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to place order: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override

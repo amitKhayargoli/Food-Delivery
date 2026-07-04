@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  createOrder,
   getRestaurantOrders,
   getOrderById,
   getMyOrders,
@@ -8,21 +9,31 @@ import {
   getOrderHistory,
   acceptOrder,
   rejectOrder,
+  cancelOrder,
   markAsPreparing,
   markAsReady,
   markAsPickedUp,
+  markAsDelivered,
+  getRiderStats,
   getDeliveryBoys,
   assignDeliveryBoy,
+  declineOrder,
   addRiderNote,
 } from '../controllers/orders.controller';
 
 const router = Router();
+
+// Create order (customer checkout)
+router.post('/', createOrder);
 
 // Customer orders
 router.get('/my', getMyOrders);
 
 // Delivery boy assigned jobs
 router.get('/delivery/my', getMyDeliveryJobs);
+
+// Delivery rider stats — MUST be placed before /:id to avoid route conflict
+router.get('/delivery/stats', getRiderStats);
 
 // Customer order history — MUST be placed before /:id to avoid route conflict
 router.get('/history', getOrderHistory);
@@ -42,6 +53,9 @@ router.patch('/:id/preparing', markAsPreparing);
 router.patch('/:id/ready', markAsReady);
 router.patch('/:id/picked-up', markAsPickedUp);
 router.patch('/:id/assign', assignDeliveryBoy);
+router.patch('/:id/cancel', cancelOrder);
+router.patch('/:id/decline', declineOrder);
+router.patch('/:id/deliver', markAsDelivered);
 router.patch('/:id/rider-note', addRiderNote);
 
 export default router;
