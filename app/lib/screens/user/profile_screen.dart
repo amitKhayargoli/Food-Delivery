@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
-import '../../data/mock_data.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
 import '../../providers/auth_provider.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/storage_service.dart';
+import '../../injection_container.dart' as di;
 import 'restaurant_menu_screen.dart';
 import '../owner/restaurant_application_screen.dart';
 import '../auth/login_screen.dart';
@@ -17,15 +20,18 @@ class ProfileScreen extends ConsumerWidget {
     final authViewModel = ref.watch(authViewModelProvider);
     final favorites = ref.watch(favoritesProvider);
 
-    // Show favorited restaurants, or first 3 mock restaurants as default
-    final favoriteRestaurants = mockRestaurants
+    // Use restaurants from the API provider; show favorites or top 3 as default
+    final allRestaurants = ref.watch(restaurantsProvider).state.restaurants;
+    final favoriteRestaurants = allRestaurants
         .where((r) => favorites.favoriteRestaurantIds.contains(r.id))
         .toList();
     final displayRestaurants =
-        favoriteRestaurants.isNotEmpty ? favoriteRestaurants : mockRestaurants.take(3).toList();
+        favoriteRestaurants.isNotEmpty ? favoriteRestaurants : allRestaurants.take(3).toList();
 
     final userName = authViewModel.currentUser?.username ?? 'Amit Khayargoli';
     final userEmail = authViewModel.currentUser?.email ?? 'khayargoliamit99@gmail.com';
+
+    final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -37,7 +43,9 @@ class ProfileScreen extends ConsumerWidget {
               // App Bar
               _buildAppBar(context),
               // Profile Header
-              _buildProfileHeader(context, userName, userEmail),
+              _buildProfileHeader(context, userName, userEmail, authProvider),
+              // Your Roles (multi-role info)
+              _buildRolesSection(context, authProvider),
               // Favorite Restaurants
               _buildFavoriteRestaurantsSection(context, ref, displayRestaurants),
               // Business & Partnerships
@@ -117,7 +125,7 @@ class ProfileScreen extends ConsumerWidget {
   // Profile Header — Avatar + Name + Email
   // ──────────────────────────────────────────────
 
-  Widget _buildProfileHeader(BuildContext context, String userName, String userEmail) {
+  Widget _buildProfileHeader(BuildContext context, String userName, String userEmail, AuthProvider authProvider) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.only(top: 24, left: 16, right: 16, bottom: 8),
@@ -132,6 +140,7 @@ class ProfileScreen extends ConsumerWidget {
             height: 96,
             child: Stack(
               children: [
+                // Avatar image or fallback
                 Container(
                   width: 96,
                   height: 96,
@@ -161,60 +170,50 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(9999),
-                    child: Image.network(
-                      'https://placehold.co/88x88',
-                      width: 88,
-                      height: 88,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        color: const Color(0xFFFFF1F0),
-                        child: const Icon(
-                          Icons.person,
-                          size: 44,
-                          color: Color(0xFFF5222D),
-                        ),
-                      ),
-                    ),
+                    child: _buildAvatarContent(context, authProvider),
                   ),
                 ),
-                // Camera/edit icon overlay
+                // Camera/edit icon overlay (tappable)
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: ShapeDecoration(
-                      color: const Color(0xFFF5222D),
-                      shape: RoundedRectangleBorder(
-                        side: const BorderSide(
-                          width: 2,
-                          color: Color(0xFFFAF9F9),
-                        ),
-                        borderRadius: BorderRadius.circular(9999),
-                      ),
-                    ),
+                  child: GestureDetector(
+                    onTap: () => _pickAndUploadAvatar(context, authProvider),
                     child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0),
-                        shape: BoxShape.circle,
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x19000000),
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                            spreadRadius: -2,
+                      padding: const EdgeInsets.all(6),
+                      decoration: ShapeDecoration(
+                        color: const Color(0xFFF5222D),
+                        shape: RoundedRectangleBorder(
+                          side: const BorderSide(
+                            width: 2,
+                            color: Color(0xFFFAF9F9),
                           ),
-                          BoxShadow(
-                            color: Color(0x19000000),
-                            blurRadius: 6,
-                            offset: Offset(0, 4),
-                            spreadRadius: -1,
-                          ),
-                        ],
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
                       ),
-                      child: const Icon(Icons.camera_alt, size: 12, color: Colors.white),
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0),
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x19000000),
+                              blurRadius: 4,
+                              offset: Offset(0, 2),
+                              spreadRadius: -2,
+                            ),
+                            BoxShadow(
+                              color: Color(0x19000000),
+                              blurRadius: 6,
+                              offset: Offset(0, 4),
+                              spreadRadius: -1,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.camera_alt, size: 12, color: Colors.white),
+                      ),
                     ),
                   ),
                 ),
@@ -249,6 +248,351 @@ class ProfileScreen extends ConsumerWidget {
                 fontWeight: FontWeight.w400,
                 height: 1.43,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Avatar Content
+  // ──────────────────────────────────────────────
+
+  Widget _buildAvatarContent(BuildContext context, AuthProvider authProvider) {
+    final avatarUrl = authProvider.avatarUrl;
+
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return Image.network(
+        avatarUrl,
+        width: 88,
+        height: 88,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _buildAvatarFallback(),
+      );
+    }
+
+    return _buildAvatarFallback();
+  }
+
+  Widget _buildAvatarFallback() {
+    return Container(
+      color: const Color(0xFFFFF1F0),
+      child: const Icon(
+        Icons.person,
+        size: 44,
+        color: Color(0xFFF5222D),
+      ),
+    );
+  }
+
+  /// Pick an image from gallery/camera, upload to Supabase, and update the profile.
+  Future<void> _pickAndUploadAvatar(
+      BuildContext context, AuthProvider authProvider) async {
+    final picker = ImagePicker();
+    // Capture messenger before any async gaps
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Show bottom sheet to choose source
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Change Profile Photo',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFFF5222D)),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: Color(0xFFF5222D)),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final pickedFile = await picker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+
+    if (pickedFile == null) return;
+
+    // Show loading indicator
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Uploading profile photo...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    try {
+      final token = authProvider.token;
+      if (token == null) {
+        if (context.mounted) {
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Not authenticated')),
+          );
+        }
+        return;
+      }
+
+      // Upload to avatar-images bucket
+      final storage = di.sl<StorageService>();
+      final avatarUrl = await storage.uploadProfilePicture(
+        filePath: pickedFile.path,
+        token: token,
+      );
+
+      // Save the URL on the backend
+      final api = di.sl<ApiService>();
+      await api.updateAvatarUrl(avatarUrl: avatarUrl, token: token);
+
+      // Update AuthProvider state
+      await authProvider.setAvatarUrl(avatarUrl);
+
+      if (context.mounted) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated!'),
+            backgroundColor: Color(0xFF22C55E),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(content: Text('Failed to upload photo: $e')),
+        );
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Your Roles Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildRolesSection(BuildContext context, AuthProvider authProvider) {
+    final roles = authProvider.availableRoles;
+    final activeRole = authProvider.activeRole;
+    final hasMultipleRoles = roles.length > 1;
+
+    String formatRole(String raw) {
+      return raw
+          .split('_')
+          .map((w) => w.isNotEmpty
+              ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
+              : '')
+          .join(' ');
+    }
+
+    IconData roleIcon(String role) {
+      switch (role) {
+        case 'RESTAURANT_OWNER': return Icons.store_rounded;
+        case 'DELIVERY_BOY': return Icons.moped_rounded;
+        default: return Icons.person_rounded;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.swap_horiz_rounded, size: 18, color: Color(0xFF1A1A1A)),
+              const SizedBox(width: 8),
+              const Text(
+                'Your Account',
+                style: TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  height: 1.33,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Active role badge
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF1F0),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(roleIcon(activeRole),
+                          color: const Color(0xFFBB0018), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Currently viewing as',
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFF8E8E93)),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formatRole(activeRole),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1A1C1C),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFBB0018).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Active',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFBB0018),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (hasMultipleRoles) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                  const SizedBox(height: 12),
+
+                  // Other available roles
+                  const Text('Other Roles',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600,
+                          color: Color(0xFF8E8E93))),
+                  const SizedBox(height: 8),
+                  ...roles
+                      .where((r) => r != activeRole)
+                      .map((role) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: GestureDetector(
+                              onTap: () {
+                                authProvider.switchActiveRole(role);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF9FAFB),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: const Color(0xFFE5E7EB)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(roleIcon(role),
+                                        color: const Color(0xFF8E8E93),
+                                        size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            formatRole(role),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF1A1C1C),
+                                            ),
+                                          ),
+                                          Text(
+                                            role == 'RESTAURANT_OWNER'
+                                                ? 'Manage your restaurant'
+                                                : 'Accept delivery jobs',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF8E8E93),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.arrow_forward_ios_rounded,
+                                        size: 14, color: Color(0xFFBFBFBF)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )),
+                ],
+              ],
             ),
           ),
         ],
