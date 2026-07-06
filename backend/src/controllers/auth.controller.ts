@@ -150,6 +150,75 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 };
 
 // ──────────────────────────────────────────────
+// Token Refresh — exchanges an expired (or valid) JWT for a fresh one
+// ──────────────────────────────────────────────
+
+/**
+ * POST /api/auth/refresh
+ * Accepts { token } in the body. Verifies the old token (ignoring expiration),
+ * checks the user still exists and is active, then issues a fresh JWT.
+ */
+export const refreshToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      res.status(400).json({ error: 'Token is required' });
+      return;
+    }
+
+    // Decode the old token, ignoring expiration so expired tokens can be refreshed
+    let payload: { id?: string; user_id?: string };
+    try {
+      payload = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as any;
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const userId = payload.id || payload.user_id;
+    if (!userId) {
+      res.status(401).json({ error: 'Invalid token payload' });
+      return;
+    }
+
+    // Verify the user still exists and is active
+    const { data: user, error } = await supabase.admin
+      .from('users')
+      .select('id, username, email, role, roles, status')
+      .eq('id', userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !user) {
+      res.status(401).json({ error: 'User not found' });
+      return;
+    }
+
+    if (user.status === 'INACTIVE' || user.status === 'SUSPENDED') {
+      res.status(403).json({ error: 'Account is inactive or suspended' });
+      return;
+    }
+
+    // Issue a fresh JWT
+    const roles = user.roles || [user.role];
+    const newToken = jwt.sign(
+      { id: user.id, role: user.role, roles },
+      JWT_SECRET,
+      { expiresIn: '7d' },
+    );
+
+    res.status(200).json({
+      message: 'Token refreshed successfully',
+      token: newToken,
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
 // Google Auth
 // ──────────────────────────────────────────────
 export const googleAuth = async (req: Request, res: Response): Promise<void> => {

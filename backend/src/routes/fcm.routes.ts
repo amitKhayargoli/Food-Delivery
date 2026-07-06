@@ -53,6 +53,45 @@ router.post('/register-token', async (req: Request, res: Response): Promise<void
 // Send an incoming call push notification to the callee.
 // Called by the Flutter app immediately after inserting a call record.
 // ──────────────────────────────────────────────
+// ──────────────────────────────────────────────
+// POST /api/fcm/test-send
+// [DEV] Send a test push notification to a user.
+// Requires the user_id and their FCM device token to be registered.
+// ──────────────────────────────────────────────
+router.post('/test-send', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { targetUserId, title, body, data } = req.body;
+    if (!targetUserId || !title || !body) {
+      res.status(400).json({ error: 'targetUserId, title, and body are required' });
+      return;
+    }
+
+    const { notifyUser } = await import('../services/fcm.service');
+
+    await notifyUser(targetUserId, supabase.admin, {
+      title,
+      body,
+      data: data ?? { type: 'test_notification' },
+    });
+
+    res.status(200).json({ message: `Test notification sent to user ${targetUserId}` });
+  } catch (error) {
+    console.error('[FCM] Test send error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ──────────────────────────────────────────────
+// POST /api/fcm/notify-call
+// Send an incoming call push notification to the callee.
+// Called by the Flutter app immediately after inserting a call record.
+// ──────────────────────────────────────────────
 router.post('/notify-call', async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = await getUserId(req);

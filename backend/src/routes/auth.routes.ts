@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   register,
   login,
+  refreshToken,
   googleAuth,
   completeProfile,
   checkAvailability,
@@ -18,5 +19,6 @@ router.post('/complete-profile', completeProfile);
 router.post('/check-availability', checkAvailability);
 router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
+router.post('/refresh', refreshToken);
 
 export default router;

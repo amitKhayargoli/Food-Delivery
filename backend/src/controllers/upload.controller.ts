@@ -10,7 +10,7 @@ interface JwtPayload {
 }
 
 // Allowed buckets
-const ALLOWED_BUCKETS = ['pan-certificates', 'restaurant-images', 'food-images', 'avatar-images'];
+const ALLOWED_BUCKETS = ['pan-certificates', 'restaurant-images', 'food-images', 'avatar-images', 'delivery-photos'];
 
 const MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',

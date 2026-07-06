@@ -99,7 +99,6 @@ export async function sendPushNotification(
     android: {
       priority: 'HIGH',
       notification: {
-        priority: 'HIGH',
         sound: 'default',
       },
     },

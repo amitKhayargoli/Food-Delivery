@@ -142,6 +142,7 @@ class Order {
   final DateTime? cancelledAt;
   final String? rejectionReason;
   final String? riderNote;
+  final String? deliveryPhotoUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -172,6 +173,7 @@ class Order {
     this.cancelledAt,
     this.rejectionReason,
     this.riderNote,
+    this.deliveryPhotoUrl,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -229,6 +231,7 @@ class Order {
       rejectionReason: json['rejection_reason'] as String? ??
           json['rejectionReason'] as String?,
       riderNote: json['rider_note'] as String? ?? json['riderNote'] as String?,
+      deliveryPhotoUrl: json['delivery_photo_url'] as String? ?? json['deliveryPhotoUrl'] as String?,
       createdAt: _parseDateTime(
               json['created_at'] as String? ?? json['createdAt'] as String?) ??
           DateTime.now(),
