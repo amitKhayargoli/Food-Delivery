@@ -19,6 +19,7 @@ import {
   assignDeliveryBoy,
   declineOrder,
   addRiderNote,
+  getAllOrders,
 } from '../controllers/orders.controller';
 
 const router = Router();
@@ -40,6 +41,9 @@ router.get('/history', getOrderHistory);
 
 // Owner order search — MUST be placed before /:id to avoid route conflict
 router.get('/search', searchOrders);
+
+// Admin endpoints
+router.get('/admin/all', getAllOrders);
 
 // Restaurant owner endpoints
 router.get('/restaurant', getRestaurantOrders);

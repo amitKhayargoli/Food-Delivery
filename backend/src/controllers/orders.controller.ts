@@ -983,15 +983,22 @@ export const markAsDelivered = async (req: Request, res: Response): Promise<void
     }
 
     const { id } = req.params;
+    const { delivery_photo_url, delivery_lat, delivery_lng } = req.body;
+
+    // Build update payload
+    const updatePayload: Record<string, any> = {
+      status: 'DELIVERED',
+      delivered_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (delivery_photo_url) updatePayload.delivery_photo_url = delivery_photo_url;
+    if (delivery_lat != null) updatePayload.delivery_lat = delivery_lat;
+    if (delivery_lng != null) updatePayload.delivery_lng = delivery_lng;
 
     // Update order to DELIVERED
     const { data: updated, error } = await supabase.admin
       .from('orders')
-      .update({
-        status: 'DELIVERED',
-        delivered_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', id)
       .eq('delivery_boy_id', userId)
       .in('status', ['PICKED_UP', 'OUT_FOR_DELIVERY'])
@@ -1343,6 +1350,84 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
     });
   } catch (error) {
     console.error('[CancelOrder] Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET /api/orders/admin/all
+// Get all orders (admin only). Returns delivered orders with
+// restaurant names, rider info, and delivery photo status.
+// Used for dispute resolution in the admin panel.
+// ──────────────────────────────────────────────
+export const getAllOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const role = getUserRole(req);
+    if (role !== 'ADMIN') {
+      res.status(403).json({ error: 'Admin access required.' });
+      return;
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+    // Fetch all delivered orders
+    const { data: orders, error } = await supabase.admin
+      .from('orders')
+      .select('*')
+      .eq('status', 'DELIVERED')
+      .order('delivered_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      console.error('Fetch all orders error:', error);
+      res.status(500).json({ error: 'Failed to fetch orders.' });
+      return;
+    }
+
+    if (!orders || orders.length === 0) {
+      res.status(200).json({ orders: [] });
+      return;
+    }
+
+    // Fetch order_items
+    const orderIds = orders.map((o: any) => o.id);
+    const { data: allItems, error: itemsError } = await supabase.admin
+      .from('order_items')
+      .select('*')
+      .in('order_id', orderIds);
+
+    if (itemsError) {
+      console.error('Fetch order items error:', itemsError);
+    }
+
+    // Fetch restaurant names
+    const restaurantIds = orders.map((o: any) => o.restaurant_id);
+    const restaurantNames = await getRestaurantNames(restaurantIds);
+
+    // Fetch rider info
+    const riderIds = orders
+      .map((o: any) => o.delivery_boy_id)
+      .filter(Boolean) as string[];
+    const riderInfo = await getRiderInfo(riderIds);
+
+    // Attach details
+    const ordersWithDetails = orders.map((order: any) => {
+      const info = riderInfo.get(order.delivery_boy_id);
+      return {
+        ...order,
+        items: (allItems || []).filter(
+          (item: any) => item.order_id === order.id,
+        ),
+        restaurant_name: restaurantNames.get(order.restaurant_id) || '',
+        delivery_boy_name: info?.username || null,
+        delivery_boy_avatar_url: info?.avatar_url || null,
+      };
+    });
+
+    res.status(200).json({ orders: ordersWithDetails });
+  } catch (error) {
+    console.error('Get all orders error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
