@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:baato_maps/baato_maps.dart';
 // ignore: implementation_imports
@@ -59,6 +61,14 @@ class RiderMapView extends StatefulWidget {
   /// Whether to show the ETA overlay bar at the bottom
   final bool showEtaBar;
 
+  /// Whether to draw the route polyline from rider to dropoff.
+  /// Uses Baato Directions API internally. Only works in single-rider mode.
+  final bool showRoute;
+
+  /// Called when the user taps on the map area.
+  /// Used to open a full-screen map view.
+  final VoidCallback? onTap;
+
   const RiderMapView({
     super.key,
     required this.riderLocation,
@@ -69,6 +79,8 @@ class RiderMapView extends StatefulWidget {
     this.distanceText,
     this.height = 250,
     this.showEtaBar = true,
+    this.showRoute = false,
+    this.onTap,
   });
 
   @override
@@ -80,6 +92,13 @@ class _RiderMapViewState extends State<RiderMapView> {
   bool _isMapLoading = true;
   bool _mapReady = false;
 
+  // Calculated screen positions for overlaid markers, keyed by identifier
+  //   'rider0', 'rider1', ... for multi-rider, 'pickup', 'dropoff'
+  final Map<String, Offset> _markerScreenPositions = {};
+  bool _isRouteLoading = false;
+  bool _initialRouteDrawn = false;
+  Timer? _routeRefreshDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -90,18 +109,33 @@ class _RiderMapViewState extends State<RiderMapView> {
     super.didUpdateWidget(oldWidget);
     if (!_mapReady) return;
 
-    // Compute the full point list for old and new widget, then compare by value.
-    // This handles both multi-rider and single-rider mode uniformly.
-    final List<RiderMapPoint> oldPoints = oldWidget.riderLocations?.isNotEmpty == true
+    // Compare rider points (handles both single and multi-rider)
+    final oldRiderPoints = oldWidget.riderLocations?.isNotEmpty == true
         ? oldWidget.riderLocations!
         : [oldWidget.riderLocation];
-    final List<RiderMapPoint> newPoints = widget.riderLocations?.isNotEmpty == true
+    final newRiderPoints = widget.riderLocations?.isNotEmpty == true
         ? widget.riderLocations!
         : [widget.riderLocation];
+    final riderChanged = _locationsListsDiffer(oldRiderPoints, newRiderPoints);
 
-    if (_locationsListsDiffer(oldPoints, newPoints)) {
-      _addRiderMarkers();
+    // Compare pickup / dropoff location changes
+    final pickupChanged = _pointChanged(oldWidget.pickupLocation, widget.pickupLocation);
+    final dropoffChanged = _pointChanged(oldWidget.dropoffLocation, widget.dropoffLocation);
+
+    if (riderChanged || pickupChanged || dropoffChanged) {
+      _recalculateOverlayMarkers();
+      // Only redraw the route when the rider moves, not for pickup/dropoff changes
+      if (riderChanged) _onRiderLocationChanged();
     }
+  }
+
+  /// Compare two nullable RiderMapPoints by lat/lng.
+  bool _pointChanged(RiderMapPoint? a, RiderMapPoint? b) {
+    if (a == null && b == null) return false;
+    if (a == null || b == null) return true;
+    return a.latitude != b.latitude ||
+        a.longitude != b.longitude ||
+        a.label != b.label;
   }
 
   /// Compare two nullable lists of RiderMapPoint by value (lat/lng/label/type).
@@ -126,7 +160,9 @@ class _RiderMapViewState extends State<RiderMapView> {
 
   @override
   void dispose() {
+    _routeRefreshDebounce?.cancel();
     _clearMarkers();
+    _clearRoute();
     super.dispose();
   }
 
@@ -140,9 +176,18 @@ class _RiderMapViewState extends State<RiderMapView> {
     return [widget.riderLocation];
   }
 
-  /// Compute the average coordinate from all rider points for initial camera.
+  /// All map points including rider, pickup, and dropoff (if provided).
+  /// Used for computing center and zoom so all markers fit on screen.
+  List<RiderMapPoint> get _allMapPoints {
+    final points = <RiderMapPoint>[..._allRiderPoints];
+    if (widget.pickupLocation != null) points.add(widget.pickupLocation!);
+    if (widget.dropoffLocation != null) points.add(widget.dropoffLocation!);
+    return points;
+  }
+
+  /// Compute the center of ALL points (rider, pickup, dropoff) for initial camera.
   BaatoCoordinate _computeCenter() {
-    final points = _allRiderPoints;
+    final points = _allMapPoints;
     if (points.isEmpty) return _toCoord(widget.riderLocation);
 
     double latSum = 0, lngSum = 0;
@@ -156,48 +201,249 @@ class _RiderMapViewState extends State<RiderMapView> {
     );
   }
 
-  /// Determine initial zoom level: tighter zoom for single, wider for multi.
+  /// Determine zoom level dynamically based on how spread out all points are.
+  /// Wider spread = lower zoom so all markers fit on screen.
+  /// Falls back to 14.0 when there's only one point or points are close.
   double _computeZoom() {
-    if (_isMultiRider) return 13.0;
-    return 14.0;
+    final allPoints = _allMapPoints;
+    if (allPoints.isEmpty) return 14.0;
+    if (allPoints.length == 1) return 14.0;
+
+    double minLat = allPoints.first.latitude;
+    double maxLat = allPoints.first.latitude;
+    double minLng = allPoints.first.longitude;
+    double maxLng = allPoints.first.longitude;
+
+    for (final p in allPoints) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    final double latDiff = maxLat - minLat;
+    final double lngDiff = maxLng - minLng;
+    final double maxDiff = latDiff > lngDiff ? latDiff : lngDiff;
+
+    if (maxDiff > 0.5) return 11.0;
+    if (maxDiff > 0.1) return 12.0;
+    if (maxDiff > 0.05) return 13.0;
+    if (maxDiff > 0.01) return 14.0;
+    return 15.0;
   }
 
-  void _clearMarkers() {
+  /// Clear all MapLibre symbols (markers) from the map.
+  Future<void> _clearMarkers() async {
     try {
-      _mapController.markerManager.clearMarkers();
+      await _mapController.markerManager.clearMarkers();
     } catch (_) {
       // Map might not be initialized yet
     }
   }
 
-  Future<void> _addRiderMarkers() async {
-    final points = _allRiderPoints;
-    if (points.isEmpty) return;
+  Future<void> _clearRoute() async {
+    try {
+      await _mapController.routeManager.clearRoute();
+    } catch (_) {
+      // Map might not be initialized yet
+    }
+  }
+
+  /// Recalculate screen positions for all markers (rider, pickup, dropoff)
+  /// by converting their lat/lng coordinates to on-screen pixel coordinates.
+  /// These positions are then used to render Flutter overlay widgets on top of the map.
+  Future<void> _recalculateOverlayMarkers() async {
+    final controller = _mapController.libreController;
+    if (controller == null) {
+      debugPrint('[RiderMapView] ⚠️ libreController null, retrying in 800ms');
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) _recalculateOverlayMarkers();
+      });
+      return;
+    }
 
     try {
-      _clearMarkers();
+      final newPositions = <String, Offset>{};
 
-      for (final point in points) {
-        await _mapController.markerManager.addMarker(
-          BaatoSymbolOption(
-            geometry: _toCoord(point),
-            iconSize: 1.0,
-            iconImage: 'baato_marker',
-            iconColor: point.type == RiderMapPointType.rider
-                ? '#1967D2'
-                : '#BB0018',
-            textField: point.label,
-            textSize: 11.0,
-            textOffset: const Offset(0, 2),
-            textColor: '#1A1C1C',
-            textHaloColor: '#FFFFFF',
-            textHaloWidth: 1.5,
-          ),
+      // Convert all rider points to screen coords (handles single + multi-rider)
+      int riderIdx = 0;
+      for (final point in _allRiderPoints) {
+        final screen = await controller.toScreenLocation(
+          LatLng(point.latitude, point.longitude),
         );
+        newPositions['rider$riderIdx'] =
+            Offset(screen.x.toDouble(), screen.y.toDouble());
+        riderIdx++;
+      }
+
+      // Convert pickup location to screen coords
+      if (widget.pickupLocation != null) {
+        final pickupScreen = await controller.toScreenLocation(
+          LatLng(widget.pickupLocation!.latitude, widget.pickupLocation!.longitude),
+        );
+        newPositions['pickup'] =
+            Offset(pickupScreen.x.toDouble(), pickupScreen.y.toDouble());
+      }
+
+      // Convert dropoff location to screen coords
+      if (widget.dropoffLocation != null) {
+        final dropoffScreen = await controller.toScreenLocation(
+          LatLng(widget.dropoffLocation!.latitude, widget.dropoffLocation!.longitude),
+        );
+        newPositions['dropoff'] =
+            Offset(dropoffScreen.x.toDouble(), dropoffScreen.y.toDouble());
+      }
+
+      debugPrint('[RiderMapView] Marker positions: ${newPositions.keys.join(", ")}');
+
+      if (mounted) {
+        setState(() {
+          _markerScreenPositions
+            ..clear()
+            ..addAll(newPositions);
+        });
       }
     } catch (e) {
-      debugPrint('[RiderMapView] Error adding markers: $e');
+      debugPrint('[RiderMapView] ❌ Marker conversion error: $e - retrying');
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (mounted) _recalculateOverlayMarkers();
+      });
     }
+  }
+
+  /// Fetch the route from rider to dropoff via Baato Directions API
+  /// and draw it on the map.
+  Future<void> _fetchAndDrawRoute() async {
+    if (_isRouteLoading || _isMultiRider || !widget.showRoute) return;
+    if (widget.dropoffLocation == null) return;
+
+    // Small delay to ensure the map style is fully loaded before drawing route layers.
+    // MapLibre needs the style loaded before we can add GeoJSON sources/layers.
+    // This only matters on the initial draw (after map creation).
+    if (!_initialRouteDrawn) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    try {
+      _isRouteLoading = true;
+
+      debugPrint('[RiderMapView] 🗺️ Fetching route from '
+          '(${widget.riderLocation.latitude}, ${widget.riderLocation.longitude}) '
+          'to (${widget.dropoffLocation!.latitude}, ${widget.dropoffLocation!.longitude})');
+
+      final riderCoord = BaatoCoordinate(
+        latitude: widget.riderLocation.latitude,
+        longitude: widget.riderLocation.longitude,
+      );
+
+      final dropoffCoord = BaatoCoordinate(
+        latitude: widget.dropoffLocation!.latitude,
+        longitude: widget.dropoffLocation!.longitude,
+      );
+
+      // Build waypoints — include pickup (restaurant) if available
+      final List<BaatoCoordinate> midCoords = [];
+      if (widget.pickupLocation != null) {
+        midCoords.add(BaatoCoordinate(
+          latitude: widget.pickupLocation!.latitude,
+          longitude: widget.pickupLocation!.longitude,
+        ));
+      }
+
+      final route = await Baato.api.direction.getRoutes(
+        startCoordinate: riderCoord,
+        endCoordinate: dropoffCoord,
+        midCoordinates: midCoords,
+        mode: BaatoDirectionMode.car,
+        decodePolyline: true,
+      );
+
+      debugPrint('[RiderMapView] ✅ Route fetched successfully, drawing...');
+
+      // Draw new route — routeManager replaces the previous route internally
+      await _mapController.routeManager.drawRouteFromResponse(
+        route,
+        lineLayerProperties: BaatoLineLayerProperties(
+          lineColor: '#D93025',
+          lineWidth: 3.0,
+          lineOpacity: 0.7,
+        ),
+      );
+
+      debugPrint('[RiderMapView] ✅ Route drawn on map');
+      _initialRouteDrawn = true;
+    } catch (e) {
+      debugPrint('[RiderMapView] ❌ Route fetch/draw error: $e');
+    } finally {
+      _isRouteLoading = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  /// Redraw the route when rider location changes.
+  /// Calls the API directly if not already loading; retries after 500ms if busy.
+  void _onRiderLocationChanged() {
+    if (_isMultiRider || !widget.showRoute || widget.dropoffLocation == null) return;
+
+    _routeRefreshDebounce?.cancel();
+    if (_isRouteLoading) {
+      // API still busy from a previous call — retry after a short delay
+      _routeRefreshDebounce = Timer(const Duration(milliseconds: 500), () {
+        _onRiderLocationChanged();
+      });
+      return;
+    }
+    _fetchAndDrawRoute();
+  }
+
+  /// Build the rider overlay markers (custom image with individual labels).
+  /// Supports both single rider ('rider0') and multi-rider ('rider0', 'rider1', ...).
+  /// Each rider gets their own label from the corresponding RiderMapPoint.
+  List<Widget> _buildRiderOverlayMarkers() {
+    final riders = <Widget>[];
+    final points = _allRiderPoints;
+    for (int i = 0; i < points.length; i++) {
+      final pos = _markerScreenPositions['rider$i'];
+      if (pos == null) continue;
+      riders.add(
+        Positioned(
+          left: pos.dx - 20,
+          top: pos.dy - 30,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/img/deliveryguy.png',
+                width: 32,
+                height: 32,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.delivery_dining,
+                  size: 28,
+                  color: Color(0xFFD93025),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  points[i].label,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1C1C),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return riders;
   }
 
   BaatoCoordinate _toCoord(RiderMapPoint point) {
@@ -215,6 +461,10 @@ class _RiderMapViewState extends State<RiderMapView> {
       child: Stack(
         children: [
           // -- Baato Map --
+          // Note: GestureDetector wrapping the BaatoMap platform view does NOT
+          // work reliably (platform views absorb touch events natively).
+          // Instead, a transparent overlay on TOP of the map catches taps.
+          // The mini map is small so pan/zoom isn't needed — tap to open full screen.
           BaatoMap(
             controller: _mapController,
             style: BaatoMapStyle.breeze,
@@ -224,9 +474,27 @@ class _RiderMapViewState extends State<RiderMapView> {
             onMapCreated: (controller) {
               setState(() => _isMapLoading = false);
               _mapReady = true;
-              _addRiderMarkers();
+              // Draw the route independently — no need to wait for overlay markers
+              if (widget.showRoute && widget.dropoffLocation != null) {
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  _fetchAndDrawRoute();
+                });
+              }
+              // Position overlay markers separately (slightly later so map settles)
+              Future.delayed(const Duration(milliseconds: 1200), () {
+                _recalculateOverlayMarkers();
+              });
             },
           ),
+
+          // -- Transparent tap overlay (sits on top of the map) --
+          if (widget.onTap != null)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: widget.onTap,
+                child: Container(color: Colors.transparent),
+              ),
+            ),
 
           // -- Loading skeleton --
           if (_isMapLoading)
@@ -238,6 +506,66 @@ class _RiderMapViewState extends State<RiderMapView> {
                   height: 24,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+              ),
+            ),
+
+          // -- Marker overlay (Flutter widgets positioned on screen coords) --
+          // Rider markers (custom image) — supports multi-rider via 'rider0', 'rider1', ...
+          ..._buildRiderOverlayMarkers(),
+
+          // Pickup / Restaurant marker (emoji)
+          if (_markerScreenPositions.containsKey('pickup'))
+            Positioned(
+              left: _markerScreenPositions['pickup']!.dx - 18,
+              top: _markerScreenPositions['pickup']!.dy - 28,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🏪', style: TextStyle(fontSize: 28)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Restaurant',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E8E3E),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Dropoff / Customer marker (emoji)
+          if (_markerScreenPositions.containsKey('dropoff'))
+            Positioned(
+              left: _markerScreenPositions['dropoff']!.dx - 18,
+              top: _markerScreenPositions['dropoff']!.dy - 28,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('📍', style: TextStyle(fontSize: 28)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      widget.dropoffLocation?.label ?? 'Delivery',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFBB0018),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 

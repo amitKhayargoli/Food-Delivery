@@ -3,19 +3,25 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../firebase_options.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/call_provider.dart';
 import '../../models/call.dart';
+import '../../models/order.dart';
+import '../services/api_service.dart';
+import '../../screens/user/order_detail_screen.dart';
 
 /// Service that manages FCM push notification registration and handling.
 /// On init, it requests notification permissions, obtains the device token
 /// from FCM, and sends it to the backend to enable server-side push
 /// notifications (e.g. when a user's role changes).
 ///
-/// Also handles incoming call data payloads — when the app receives an
-/// "incoming_call" push, it automatically shows the IncomingCallScreen.
+/// Also handles deep linking — when the user taps a push notification,
+/// the app navigates to the relevant screen (e.g. order detail for an
+/// "order_update" notification, or incoming call screen for a call).
 class PushNotificationService {
+  static const _secureStorage = FlutterSecureStorage();
   final Dio _dio;
   FirebaseMessaging? _messaging;
   String? _deviceToken;
@@ -93,14 +99,18 @@ class PushNotificationService {
 
   /// Handle a push notification received while the app is in the foreground.
   void _handleForegroundMessage(RemoteMessage message) {
-    // Check if this is an incoming call payload
     final data = message.data;
-    if (data['type'] == 'incoming_call') {
+    final type = data['type'] as String?;
+
+    if (type == 'incoming_call') {
       _handleIncomingCallPayload(data);
       return;
     }
 
-    // Otherwise show a standard snackbar notification
+    // Navigate to the relevant screen based on notification type
+    _navigateToDeepLink(data);
+
+    // Also show a snackbar for the notification content
     final notification = message.notification;
     if (notification == null) return;
 
@@ -114,10 +124,18 @@ class PushNotificationService {
     if (context != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(parts),
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text(parts, maxLines: 2, overflow: TextOverflow.ellipsis)),
+            ],
+          ),
           backgroundColor: const Color(0xFF1A1C1C),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         ),
       );
     }
@@ -127,19 +145,32 @@ class PushNotificationService {
   /// to the foreground from a background state.
   void _handleNotificationTap(RemoteMessage message) {
     final data = message.data;
-    if (data['type'] == 'incoming_call') {
+    final type = data['type'] as String?;
+
+    if (type == 'incoming_call') {
       _handleIncomingCallPayload(data);
+      return;
     }
+
+    _navigateToDeepLink(data);
   }
 
   /// Check if the app was launched from a terminated state by tapping a
-  /// notification (e.g. an incoming call push).
+  /// notification.
   Future<void> _checkInitialMessage() async {
     try {
       final message = await FirebaseMessaging.instance.getInitialMessage();
-      if (message != null && message.data['type'] == 'incoming_call') {
-        _handleIncomingCallPayload(message.data);
+      if (message == null) return;
+
+      final data = message.data;
+      final type = data['type'] as String?;
+
+      if (type == 'incoming_call') {
+        _handleIncomingCallPayload(data);
+        return;
       }
+
+      _navigateToDeepLink(data);
     } catch (e) {
       debugPrint('[PushNotification] getInitialMessage error: $e');
     }
@@ -181,6 +212,94 @@ class PushNotificationService {
       callProvider.service.triggerIncomingCall(incomingCall);
     } catch (e) {
       debugPrint('[PushNotification] Incoming call handling error: $e');
+    }
+  }
+
+  /// Navigate to the screen relevant to a push notification payload.
+  /// Supports: order_update, order_cancelled, delivery_assigned,
+  /// rider_declined, rider_timeout, reassignment_failed, role_change.
+  void _navigateToDeepLink(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    final orderId = data['order_id'] as String?;
+
+    debugPrint('[PushNotification] 🔗 Deep link: type=$type, orderId=$orderId');
+
+    final navigatorKey = di.sl<GlobalKey<NavigatorState>>();
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      debugPrint('[PushNotification] ⚠ No navigator context available');
+      return;
+    }
+
+    // For order-related notifications, fetch the order and navigate to it
+    if (orderId != null && orderId.isNotEmpty) {
+      _navigateToOrder(context, orderId, type: type);
+      return;
+    }
+
+    // Role change notifications — no navigation needed
+    if (type == 'role_change') {
+      debugPrint('[PushNotification] 🔔 Role change notification — no navigation needed');
+      return;
+    }
+
+    debugPrint('[PushNotification] ⚠ Unknown notification type: $type');
+  }
+
+  /// Fetch an order by ID and navigate to [OrderDetailScreen].
+  /// If the data can't be fetched, shows a snackbar instead.
+  Future<void> _navigateToOrder(
+    BuildContext context,
+    String orderId, {
+    String? type,
+  }) async {
+    try {
+      // Read the auth token from secure storage
+      final token = await _secureStorage.read(key: 'jwt_token');
+      if (token == null || token.isEmpty) {
+        debugPrint('[PushNotification] ⚠ No auth token available for deep link');
+        return;
+      }
+
+      final api = di.sl<ApiService>();
+      final orderData = await api.getOrderById(orderId: orderId, token: token);
+
+      if (orderData == null) {
+        debugPrint('[PushNotification] ⚠ Order not found: $orderId');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Could not load order details')),
+                ],
+              ),
+              backgroundColor: Color(0xFFF5222D),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      final order = Order.fromJson(orderData);
+
+      if (!context.mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OrderDetailScreen(
+            order: order,
+            isOwner: type == 'rider_declined' ||
+                type == 'rider_timeout' ||
+                type == 'reassignment_failed',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[PushNotification] ❌ Deep link navigation error: $e');
     }
   }
 

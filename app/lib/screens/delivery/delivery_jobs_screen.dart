@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/services/supabase_client_service.dart';
 import '../../core/services/rider_location_service.dart';
 import '../../widgets/rider_map_view.dart';
@@ -306,17 +308,145 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
     }
   }
 
-  /// Mark an order as delivered. Captures GPS snapshot as proof.
+  /// Mark an order as delivered.
+  /// Captures GPS snapshot + optionally a delivery photo as proof.
   Future<void> _markAsDelivered(Order order) async {
     final token = _token;
     if (token == null) return;
 
-    // Confirm with the rider
+    // Step 1: Ask if rider wants to take a delivery photo
+    final takePhoto = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.camera_alt_rounded, color: Color(0xFFBB0018), size: 24),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('Delivery Photo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Take a photo of the delivered order as proof of delivery.\n\n'
+          'This helps resolve disputes and provides a complete delivery record.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Skip Photo',
+                style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF8E8E93))),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.camera_alt, size: 18),
+            label: const Text('Take Photo'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFBB0018),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (takePhoto == null) return; // Cancelled
+
+    setState(() => _isDelivering = true);
+
+    String? deliveryPhotoUrl;
+
+    // Step 2: If rider chose to take a photo, open camera and upload
+    if (takePhoto) {
+      try {
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(
+          source: ImageSource.camera,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 75,
+        );
+
+        if (pickedFile != null) {
+          // Show uploading snackbar
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Uploading delivery photo...'),
+                  ],
+                ),
+                duration: Duration(seconds: 30),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+
+          // Upload to delivery-photos bucket
+          final storage = di.sl<StorageService>();
+          deliveryPhotoUrl = await storage.uploadDeliveryPhoto(
+            filePath: pickedFile.path,
+            token: token,
+          );
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          }
+        }
+      } catch (_) {
+        // Photo upload failed — proceed without photo
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
+      }
+    }
+
+    // Step 3: Confirm delivery
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Delivery'),
-        content: const Text('Mark this order as delivered?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Confirm Delivery',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Mark this order as delivered?'),
+            if (deliveryPhotoUrl != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6F4EA),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle, size: 16, color: Color(0xFF1E8E3E)),
+                    SizedBox(width: 6),
+                    Text('Photo attached',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E8E3E))),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -331,9 +461,11 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      setState(() => _isDelivering = false);
+      return;
+    }
 
-    setState(() => _isDelivering = true);
     try {
       // Capture current GPS position as proof
       double? lat;
@@ -353,6 +485,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       await api.markOrderAsDelivered(
         orderId: order.id,
         token: token,
+        deliveryPhotoUrl: deliveryPhotoUrl,
         deliveryLat: lat,
         deliveryLng: lng,
       );
