@@ -9,6 +9,9 @@ import '../../core/services/api_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../injection_container.dart' as di;
 import 'restaurant_menu_screen.dart';
+import 'customize_feed_screen.dart';
+import 'support_conversation_list_screen.dart';
+import 'my_reports_screen.dart';
 import '../owner/restaurant_application_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -25,8 +28,6 @@ class ProfileScreen extends ConsumerWidget {
     final favoriteRestaurants = allRestaurants
         .where((r) => favorites.favoriteRestaurantIds.contains(r.id))
         .toList();
-    final displayRestaurants =
-        favoriteRestaurants.isNotEmpty ? favoriteRestaurants : allRestaurants.take(3).toList();
 
     final userName = authViewModel.currentUser?.username ?? 'Amit Khayargoli';
     final userEmail = authViewModel.currentUser?.email ?? 'khayargoliamit99@gmail.com';
@@ -47,9 +48,15 @@ class ProfileScreen extends ConsumerWidget {
               // Your Roles (multi-role info)
               _buildRolesSection(context, authProvider),
               // Favorite Restaurants
-              _buildFavoriteRestaurantsSection(context, ref, displayRestaurants),
-              // Business & Partnerships
-              _buildBusinessSection(context),
+              _buildFavoriteRestaurantsSection(context, ref, favoriteRestaurants),
+              // Customize Feed (Settings)
+              _buildPreferencesSection(context),
+
+          // Support
+          _buildSupportSection(context),
+
+          // Business & Partnerships
+          _buildBusinessSection(context),
               // Logout Button
               _buildLogoutButton(context, ref),
               const SizedBox(height: 32),
@@ -649,9 +656,39 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           // Restaurant Cards
-          ...restaurants.map(
-            (restaurant) => _buildRestaurantCard(context, ref, restaurant),
-          ),
+          if (restaurants.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.favorite_border_rounded,
+                        size: 40, color: const Color(0xFFD9D9D9)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'No favorite restaurants yet',
+                      style: TextStyle(
+                        color: Color(0xFF8E8E93),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Tap the heart icon on a restaurant to add it',
+                      style: TextStyle(
+                        color: Color(0xFFBFBFBF),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...restaurants.map(
+              (restaurant) => _buildRestaurantCard(context, ref, restaurant),
+            ),
         ],
       ),
     );
@@ -774,6 +811,181 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Preferences Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildPreferencesSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Preferences',
+            style: TextStyle(
+              color: Color(0xFF1A1A1A),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              height: 1.33,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildPreferenceCard(
+            context,
+            icon: Icons.tune_rounded,
+            iconColor: const Color(0xFF9C27B0),
+            title: 'Customize Feed',
+            subtitle: 'Toggle home screen features like time-of-day greeting and personalized suggestions',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CustomizeFeedScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreferenceCard(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: ShapeDecoration(
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, size: 28, color: iconColor),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Color(0xFF1A1A1A),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
+                        ),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFF666666),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            height: 1.33,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF8C8C8C), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Support Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildSupportSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Support',
+            style: TextStyle(
+              color: Color(0xFF1A1A1A),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              height: 1.33,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildPreferenceCard(
+            context,
+            icon: Icons.headset_mic_rounded,
+            iconColor: const Color(0xFF1967D2),
+            title: 'Contact Support',
+            subtitle: 'Get help with your orders or report an issue',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SupportConversationListScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          _buildPreferenceCard(
+            context,
+            icon: Icons.flag_outlined,
+            iconColor: const Color(0xFFF9A825),
+            title: 'My Reports',
+            subtitle: 'View all your submitted problem reports and their statuses',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MyReportsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

@@ -10,11 +10,15 @@ import 'order_confirmed_screen.dart';
 class PaymentScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? deliveryAddress;
   final String? deliveryNotes;
+  final String? couponId;
+  final double couponDiscount;
 
   const PaymentScreen({
     super.key,
     this.deliveryAddress,
     this.deliveryNotes,
+    this.couponId,
+    this.couponDiscount = 0.0,
   });
 
   @override
@@ -53,7 +57,8 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     final subtotal = cart.subtotal;
     final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
     final deliveryFee = restaurantIds.length * 50.0;
-    final total = subtotal + deliveryFee;
+    final discount = widget.couponDiscount;
+    final total = subtotal + deliveryFee - discount;
 
     // Get the auth token
     final token = context.read<AuthProvider>().token;
@@ -96,6 +101,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         token: token,
       );
 
+      // Apply coupon usage count if a coupon was applied
+      if (widget.couponId != null && widget.couponId!.isNotEmpty) {
+        try {
+          await api.applyCoupon(couponId: widget.couponId!, token: token);
+        } catch (_) {
+          // Non-fatal — order is already created
+          debugPrint('[Payment] Failed to mark coupon as used.');
+        }
+      }
+
       // Order created successfully — clear cart and navigate
       ref.read(cartStateProvider.notifier).clearCart();
 
@@ -129,13 +144,11 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cart = ref.watch(cartStateProvider);
-
-    final restaurantIds =
-        cart.items.values.map((i) => i.restaurantId).toSet();
+    final cart = ref.watch(cartStateProvider);    final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
     final deliveryFee = restaurantIds.length * 50.0;
     final subtotal = cart.subtotal;
-    final total = subtotal + deliveryFee;
+    final discount = widget.couponDiscount;
+    final total = subtotal + deliveryFee - discount;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFBF9F9),

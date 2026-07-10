@@ -227,10 +227,7 @@ class _SaveAddressSheetState extends State<_SaveAddressSheet> {
               }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFFFF1F0)
-              : const Color(0xFFF5F5F5),
+        decoration: BoxDecoration(color: isSelected ? Colors.white : const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected

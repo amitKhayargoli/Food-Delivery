@@ -11,6 +11,9 @@ import '../../providers/call_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../injection_container.dart' as di;
 import '../call/active_call_screen.dart';
+import '../full_screen_map_screen.dart';
+import 'support_conversation_list_screen.dart';
+import 'report_problem_screen.dart';
 
 /// Displays the full details of an order for the customer.
 /// Includes live rider tracking via Baato Map when a rider is assigned,
@@ -34,22 +37,74 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _hasRated = false;
   bool _isSubmittingRating = false;
 
+  // Problem report
+  Map<String, dynamic>? _problemReport;
+
   // Live rider tracking
   sb.RealtimeChannel? _riderLocationChannel;
   RiderMapPoint? _liveRiderLocation;
+  RiderMapPoint? _restaurantLocation;  // pickup marker
   bool _isSubscribed = false;
+  Timer? _riderPollingTimer;
+  DateTime? _lastRealtimeUpdate;
+
+  /// Max time without a Realtime update before falling back to polling.
+  static const _pollingInterval = Duration(seconds: 15);
 
   @override
   void initState() {
     super.initState();
     _order = widget.order;
     _initRiderTracking();
+    _fetchRestaurantLocation();
+    _checkIfAlreadyRated();
+    _fetchProblemReport();
   }
 
   @override
   void dispose() {
     _unsubscribeFromRiderLocation();
+    _riderPollingTimer?.cancel();
     super.dispose();
+  }
+
+  /// Fetch existing problem report for this order, if any.
+  Future<void> _fetchProblemReport() async {
+    if (_order.status != OrderStatus.delivered) return;
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final problem = await api.getProblemByOrder(
+        orderId: _order.id,
+        token: token,
+      );
+      if (!mounted) return;
+      setState(() {
+        _problemReport = problem;
+      });
+    } catch (_) {
+      if (!mounted) return;
+    }
+  }
+
+  /// Check if the current user has already rated this order.
+  Future<void> _checkIfAlreadyRated() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final ratings = await api.getMyRatings(token: token);
+      final hasRated = ratings.any((r) => r['order_id']?.toString() == _order.id);
+      if (mounted && hasRated != _hasRated) {
+        setState(() => _hasRated = hasRated);
+      }
+    } catch (_) {
+      // Non-fatal — user can still rate; if duplicate, API returns 409
+    }
   }
 
   // ── Live Rider Tracking ──────────────────────
@@ -69,6 +124,39 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // Subscribe to live updates
     _subscribeToRiderLocation(riderId);
+  }
+
+  /// Fetch the restaurant's lat/lng from the restaurant_applications table.
+  /// This provides the pickup marker location on the live tracking map.
+  Future<void> _fetchRestaurantLocation() async {
+    final restaurantId = _order.restaurantId;
+    if (restaurantId.isEmpty) return;
+
+    try {
+      final rows = await SupabaseClientService.client
+          .from('restaurant_applications')
+          .select('latitude, longitude, restaurant_name')
+          .eq('id', restaurantId)
+          .limit(1);
+
+      if (rows.isEmpty || !mounted) return;
+
+      final row = rows.first;
+      final lat = (row['latitude'] as num?)?.toDouble();
+      final lng = (row['longitude'] as num?)?.toDouble();
+      if (lat == null || lng == null) return;
+
+      setState(() {
+        _restaurantLocation = RiderMapPoint(
+          latitude: lat,
+          longitude: lng,
+          label: row['restaurant_name'] as String? ?? _order.restaurantName,
+          type: RiderMapPointType.pickup,
+        );
+      });
+    } catch (e) {
+      debugPrint('[OrderDetail] Failed to fetch restaurant location: $e');
+    }
   }
 
   /// Fetch the rider's current location via REST (one-time initial fetch).
@@ -122,6 +210,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           final lng = record['longitude'] as num?;
           if (lat == null || lng == null) return;
 
+          _lastRealtimeUpdate = DateTime.now();
+
           if (mounted) {
             setState(() {
               _liveRiderLocation = RiderMapPoint(
@@ -141,9 +231,54 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           debugPrint('[RT-RiderLocation] Error: $error');
         }
       });
+
+      // Start polling fallback: if Realtime goes silent for 15s, fall back to REST polling
+      _startPollingFallback(riderId);
     } catch (e) {
       debugPrint('[RT-RiderLocation] Setup error: $e');
+      // If Realtime setup fails, start polling immediately
+      _startPollingFallback(riderId);
     }
+  }
+
+  /// Poll rider location via REST as a fallback when Realtime isn't available.
+  /// Only fires if no Realtime update was received within [_pollingInterval].
+  void _startPollingFallback(String riderId) {
+    _riderPollingTimer?.cancel();
+    _riderPollingTimer = Timer.periodic(_pollingInterval, (_) async {
+      // Skip polling if we got a Realtime update within the last interval
+      if (_lastRealtimeUpdate != null &&
+          DateTime.now().difference(_lastRealtimeUpdate!) < _pollingInterval) {
+        return;
+      }
+
+      final token = context.read<AuthProvider>().token;
+      if (token == null) return;
+      if (!mounted) return;
+
+      try {
+        final api = di.sl<ApiService>();
+        final location = await api.getRiderLocation(
+          riderId: riderId,
+          token: token,
+        );
+        if (location == null || !mounted) return;
+        final lat = location['latitude'] as num?;
+        final lng = location['longitude'] as num?;
+        if (lat == null || lng == null) return;
+
+        setState(() {
+          _liveRiderLocation = RiderMapPoint(
+            latitude: lat.toDouble(),
+            longitude: lng.toDouble(),
+            label: 'Rider',
+            type: RiderMapPointType.rider,
+          );
+        });
+      } catch (e) {
+        debugPrint('[RT-RiderLocation] Polling fetch failed: $e');
+      }
+    });
   }
 
   void _unsubscribeFromRiderLocation() {
@@ -478,6 +613,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
@@ -512,6 +648,166 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ),
       );
     }
+  }
+
+  /// Build a card showing the problem report status.
+  Widget _buildProblemStatusCard() {
+    final problem = _problemReport;
+    if (problem == null) return const SizedBox.shrink();
+
+    final status = problem['status'] as String? ?? 'PENDING';
+    final issueType = problem['issue_type'] as String? ?? '';
+    final adminNote = problem['admin_note'] as String?;
+
+    final typeLabels = {
+      'wrong_item': 'Wrong Item',
+      'missing_item': 'Missing Item',
+      'quality': 'Food Quality',
+      'other': 'Other Issue',
+    };
+
+    Color bgColor;
+    Color borderColor;
+    Color textColor;
+    IconData icon;
+    String statusLabel;
+    String description;
+
+    switch (status) {
+      case 'APPROVED':
+        bgColor = const Color(0xFFE6F4EA);
+        borderColor = const Color(0xFF1E8E3E);
+        textColor = const Color(0xFF1E8E3E);
+        icon = Icons.check_circle;
+        statusLabel = 'Refund Approved';
+        description = adminNote != null
+            ? 'Approved: $adminNote'
+            : 'Your refund request has been approved.';
+      case 'REJECTED':
+        bgColor = const Color(0xFFFFF1F0);
+        borderColor = const Color(0xFFF5222D);
+        textColor = const Color(0xFFF5222D);
+        icon = Icons.cancel_rounded;
+        statusLabel = 'Refund Rejected';
+        description = adminNote != null
+            ? 'Rejected: $adminNote'
+            : 'Your refund request has been declined.';
+      default:
+        bgColor = const Color(0xFFFFF8E1);
+        borderColor = const Color(0xFFFFE082);
+        textColor = const Color(0xFF795548);
+        icon = Icons.hourglass_empty_rounded;
+        statusLabel = 'Pending Review';
+        description = 'Your report is being reviewed by the restaurant.';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: textColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(statusLabel,
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700,
+                            color: textColor)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: textColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(typeLabels[issueType] ?? issueType,
+                          style: TextStyle(
+                              fontSize: 10, fontWeight: FontWeight.w600,
+                              color: textColor)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(description,
+                    style: TextStyle(fontSize: 12, color: textColor)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show the delivery photo in a full-screen dialog for a closer look.
+  void _showDeliveryPhotoFullScreen(String photoUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                photoUrl,
+                width: double.infinity,
+                height: MediaQuery.of(context).size.height * 0.5,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text('Failed to load photo',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: MediaQuery.of(context).size.height * 0.5,
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black38,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Formatting ───────────────────────────────
@@ -821,7 +1117,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Delivery info ──
+            // ── Delivery Address ──
             if (_order.deliveryAddress?.fullAddress != null) ...[
               const Text(
                 'Delivery Address',
@@ -851,6 +1147,97 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+
+            // ── Delivery Photo Proof ──
+            if (_order.deliveryPhotoUrl != null && _order.deliveryPhotoUrl!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Delivery Photo',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1C1C),
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => _showDeliveryPhotoFullScreen(_order.deliveryPhotoUrl!),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x141B1C1C),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Image.network(
+                          _order.deliveryPhotoUrl!,
+                          width: double.infinity,
+                          height: 200,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            height: 200,
+                            color: const Color(0xFFF5F5F5),
+                            child: const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.broken_image_outlined,
+                                      size: 32, color: Color(0xFFBFBFBF)),
+                                  SizedBox(height: 8),
+                                  Text('Photo unavailable',
+                                      style: TextStyle(
+                                          fontSize: 13, color: Color(0xFFBFBFBF))),
+                                ],
+                              ),
+                            ),
+                          ),
+                          loadingBuilder: (_, child, progress) {
+                            if (progress == null) return child;
+                            return Container(
+                              height: 200,
+                              color: const Color(0xFFF5F5F5),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Color(0xFFBB0018)),
+                              ),
+                            );
+                          },
+                        ),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE6F4EA),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.camera_alt_rounded,
+                                  size: 14, color: Color(0xFF1E8E3E)),
+                              SizedBox(width: 6),
+                              Text('Delivery proof — tap to expand',
+                                  style: TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.w500,
+                                      color: Color(0xFF1E8E3E))),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -983,6 +1370,99 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
             ],
+
+            // ── Report a Problem (only for delivered orders) ──
+            if (_order.status == OrderStatus.delivered) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: _problemReport != null
+                        ? null
+                        : () async {
+                            final result = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ReportProblemScreen(
+                                  orderId: _order.id,
+                                  orderNumber: _order.orderNumber,
+                                ),
+                              ),
+                            );
+                            if (result == true) {
+                              _fetchProblemReport();
+                            }
+                          },
+                    icon: Icon(
+                      _problemReport != null
+                          ? Icons.check_circle_outline
+                          : Icons.flag_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _problemReport != null
+                          ? 'Report Submitted'
+                          : 'Report a Problem',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _problemReport != null
+                            ? const Color(0xFF8E8E93)
+                            : const Color(0xFFF5222D),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _problemReport != null
+                          ? const Color(0xFF8E8E93)
+                          : const Color(0xFFF5222D),
+                      side: BorderSide(
+                        color: _problemReport != null
+                            ? const Color(0xFFE5E7EB)
+                            : const Color(0xFFF5222D),
+                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ),
+              // Problem status banner
+              if (_problemReport != null) ...[
+                const SizedBox(height: 12),
+                _buildProblemStatusCard(),
+              ],
+            ],
+
+            // ── Contact Support ──
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SupportConversationListScreen(
+                          orderId: _order.id,
+                          orderNumber: _order.orderNumber,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.headset_mic_rounded, size: 18),
+                  label: const Text('Contact Support',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1967D2),
+                    side: const BorderSide(color: Color(0xFF1967D2)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
 
             // ── Already rated indicator ──
             if (_hasRated) ...[
@@ -1122,12 +1602,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
           const SizedBox(height: 8),
 
-          // ── Map ──
+          // ── Map (tap to open full screen) ──
           ClipRRect(
             borderRadius: const BorderRadius.vertical(
                 bottom: Radius.circular(16)),
             child: RiderMapView(
               riderLocation: _liveRiderLocation!,
+              pickupLocation: _restaurantLocation,
               dropoffLocation: RiderMapPoint(
                 latitude: _order.deliveryAddress!.latitude!,
                 longitude: _order.deliveryAddress!.longitude!,
@@ -1137,6 +1618,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               etaText: etaText,
               height: 220,
               showEtaBar: false,
+              showRoute: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FullScreenMapScreen(
+                      riderLocation: _liveRiderLocation!,
+                      pickupLocation: _restaurantLocation,
+                      dropoffLocation: RiderMapPoint(
+                        latitude: _order.deliveryAddress!.latitude!,
+                        longitude: _order.deliveryAddress!.longitude!,
+                        label: _order.deliveryAddress!.fullAddress ?? 'You',
+                        type: RiderMapPointType.dropoff,
+                      ),
+                      riderId: _order.deliveryBoyId!,
+                      etaText: etaText,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
 

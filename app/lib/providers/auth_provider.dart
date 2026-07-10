@@ -51,6 +51,14 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _token != null && !JwtDecoder.isExpired(_token!);
 
+  /// Update the in-memory token (called by AuthInterceptor after a refresh).
+  /// Does NOT trigger a full re-login — just replaces the stored token
+  /// so all future API calls use the fresh one.
+  void setToken(String newToken) {
+    _token = newToken;
+    notifyListeners();
+  }
+
   /// Update the user's avatar URL (after upload) and persist it.
   Future<void> setAvatarUrl(String url) async {
     _avatarUrl = url;

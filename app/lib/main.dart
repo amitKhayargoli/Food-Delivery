@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:baato_maps/baato_maps.dart';
+import 'package:get_it/get_it.dart';
 import 'cart_provider.dart';
 import 'core/config/supabase_config.dart';
 import 'core/services/supabase_client_service.dart';
@@ -40,7 +41,18 @@ class MyAppWithProviders extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) {
+            final authProvider = AuthProvider();
+            // Register with GetIt so the AuthInterceptor can update
+            // the in-memory token after a refresh.
+            GetIt.instance.registerSingleton<AuthProvider>(
+              authProvider,
+              instanceName: 'auth_provider',
+            );
+            return authProvider;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => CartProvider(di.sl<SharedPreferences>())),
         ChangeNotifierProvider(create: (_) => di.sl<CallProvider>()),
         ChangeNotifierProvider(create: (_) => di.sl<RiderNotesProvider>()),
