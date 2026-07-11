@@ -515,6 +515,23 @@ class ApiService {
     }
   }
 
+  /// Fetch a single order by ID for the authenticated user
+  Future<Map<String, dynamic>?> getOrderById({
+    required String orderId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/orders/$orderId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['order'] as Map<String, dynamic>?;
+    } on DioException {
+      return null;
+    }
+  }
+
   /// Fetch orders for the authenticated customer
   Future<List<Map<String, dynamic>>> getMyOrders({required String token}) async {
     try {
@@ -681,6 +698,23 @@ class ApiService {
         data: {'auto_dispatch_enabled': enabled},
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch all orders (admin only). Returns delivered orders with
+  /// restaurant names, rider info, and delivery photo status.
+  Future<List<Map<String, dynamic>>> getAllOrders({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/orders/admin/all',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final orders = data['orders'] as List<dynamic>? ?? [];
+      return orders.cast<Map<String, dynamic>>();
     } on DioException catch (e) {
       final message = _extractError(e);
       throw ApiException(message);
@@ -1046,6 +1080,457 @@ class ApiService {
     }
   }
 
+  // ──────────────────────────────────────────────
+  //  Coupons & Promotions API
+  // ──────────────────────────────────────────────
+
+  /// Validate a coupon code and get discount info.
+  Future<CouponValidateResponse> validateCoupon({
+    required String code,
+    required double orderTotal,
+    String? restaurantId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/coupons/validate',
+        data: {
+          'code': code,
+          'order_total': orderTotal,
+          if (restaurantId != null) 'restaurant_id': restaurantId,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return CouponValidateResponse.fromJson(data);
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      return CouponValidateResponse(
+        valid: false,
+        error: message,
+      );
+    }
+  }
+
+  /// Fetch coupons for the authenticated owner's restaurant (or all for admin).
+  Future<List<Map<String, dynamic>>> getMyCoupons({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/coupons/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final coupons = data['coupons'] as List<dynamic>? ?? [];
+      return coupons.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Create a new coupon.
+  Future<Map<String, dynamic>> createCoupon({
+    required String code,
+    required String discountType,
+    required double discountValue,
+    double? minOrderAmount,
+    double? maxDiscountCap,
+    int? usageLimit,
+    String? expiresAt,
+    String? description,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/coupons',
+        data: {
+          'code': code,
+          'discount_type': discountType,
+          'discount_value': discountValue,
+          if (minOrderAmount != null) 'min_order_amount': minOrderAmount,
+          if (maxDiscountCap != null) 'max_discount_cap': maxDiscountCap,
+          if (usageLimit != null) 'usage_limit': usageLimit,
+          if (expiresAt != null) 'expires_at': expiresAt,
+          if (description != null) 'description': description,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['coupon'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Delete a coupon.
+  Future<void> deleteCoupon({
+    required String couponId,
+    required String token,
+  }) async {
+    try {
+      await _dio.delete(
+        '/coupons/$couponId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch available (active, non-expired) coupons for a customer's cart.
+  /// Returns coupons scoped to [restaurantId] + global coupons.
+  Future<List<Map<String, dynamic>>> getAvailableCoupons({
+    required String restaurantId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/coupons/available',
+        queryParameters: {'restaurant_id': restaurantId},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final coupons = data['coupons'] as List<dynamic>? ?? [];
+      return coupons.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Apply a coupon (increment usage count after successful order).
+  Future<void> applyCoupon({
+    required String couponId,
+    required String token,
+  }) async {
+    try {
+      await _dio.post(
+        '/coupons/$couponId/apply',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Home Suggestions API
+  // ──────────────────────────────────────────────
+
+  /// Fetch time-of-day curated home screen data.
+  /// Returns restaurants filtered by meal type, greeting, and favorite cuisines.
+  Future<HomeSuggestionsResponse> getHomeSuggestions({
+    String? timeOfDay,
+    String? token,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (timeOfDay != null) queryParams['time_of_day'] = timeOfDay;
+
+      final options = Options(
+        headers: token != null ? {'Authorization': 'Bearer $token'} : null,
+      );
+
+      final response = await _dio.get(
+        '/home/suggestions',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+        options: options,
+      );
+      final data = response.data as Map<String, dynamic>;
+      return HomeSuggestionsResponse.fromJson(data);
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Order Problem / Refund API
+  // ──────────────────────────────────────────────
+
+  /// Submit a problem report for an order.
+  Future<Map<String, dynamic>> submitProblem({
+    required String orderId,
+    required String issueType,
+    String? description,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/problems',
+        data: {
+          'order_id': orderId,
+          'issue_type': issueType,
+          if (description != null) 'description': description,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['problem'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch problem reports for the authenticated user.
+  Future<List<Map<String, dynamic>>> getMyProblems({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/problems/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final problems = data['problems'] as List<dynamic>? ?? [];
+      return problems.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch problem report for a specific order.
+  Future<Map<String, dynamic>?> getProblemByOrder({
+    required String orderId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/problems/order/$orderId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['problem'] as Map<String, dynamic>?;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch problem reports for the owner's restaurant.
+  Future<List<Map<String, dynamic>>> getRestaurantProblems({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/problems/restaurant',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final problems = data['problems'] as List<dynamic>? ?? [];
+      return problems.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Update a problem report's status (APPROVED / REJECTED).
+  Future<void> updateProblemStatus({
+    required String problemId,
+    required String status,
+    String? adminNote,
+    double? refundAmount,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/problems/$problemId/status',
+        data: {
+          'status': status,
+          if (adminNote != null) 'admin_note': adminNote,
+          if (refundAmount != null) 'refund_amount': refundAmount,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Personalized Suggestions API
+  // ──────────────────────────────────────────────
+
+  /// Fetch personalized home-screen data based on the user's order history.
+  /// Returns favorite restaurants, recent restaurants, and most ordered items.
+  Future<Map<String, dynamic>> getPersonalizedSuggestions({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/home/personalized',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Surprise Me API
+  // ──────────────────────────────────────────────
+
+  /// Fetch a random restaurant the user hasn't ordered from yet.
+  /// Returns the restaurant (or null if none available) and whether
+  /// the user has tried every restaurant.
+  Future<Map<String, dynamic>> getSurpriseMe({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/home/surprise-me',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Token Refresh API
+  // ──────────────────────────────────────────────
+
+  /// Exchange the current (possibly expired) token for a fresh JWT.
+  /// The backend verifies the user still exists and is active before issuing
+  /// a new token.
+  Future<String?> refreshToken(String currentToken) async {
+    try {
+      final response = await _dio.post('/auth/refresh', data: {
+        'token': currentToken,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return data['token'] as String?;
+    } on DioException {
+      return null;
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Customer Support Chat API
+  // ──────────────────────────────────────────────
+
+  /// Create a new support conversation.
+  Future<Map<String, dynamic>> createSupportConversation({
+    required String subject,
+    String? orderId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/support/conversations',
+        data: {
+          'subject': subject,
+          if (orderId != null) 'order_id': orderId,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['conversation'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch support conversations for the authenticated user.
+  Future<List<Map<String, dynamic>>> getMySupportConversations({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/support/conversations',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final conversations = data['conversations'] as List<dynamic>? ?? [];
+      return conversations.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch all support conversations (admin only).
+  Future<List<Map<String, dynamic>>> getAllSupportConversations({
+    required String token,
+    String? status,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (status != null) queryParams['status'] = status;
+
+      final response = await _dio.get(
+        '/support/conversations/admin/all',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final conversations = data['conversations'] as List<dynamic>? ?? [];
+      return conversations.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Fetch messages for a support conversation.
+  Future<List<Map<String, dynamic>>> getSupportMessages({
+    required String conversationId,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/support/conversations/$conversationId/messages',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final messages = data['messages'] as List<dynamic>? ?? [];
+      return messages.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Send a message in a support conversation.
+  Future<Map<String, dynamic>> sendSupportMessage({
+    required String conversationId,
+    required String message,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/support/conversations/$conversationId/messages',
+        data: {'message': message},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['msg'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Close a support conversation.
+  Future<void> closeSupportConversation({
+    required String conversationId,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/support/conversations/$conversationId/close',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Extract error message from DioException
   String _extractError(DioException e) {
     if (e.response?.data is Map<String, dynamic>) {
@@ -1156,6 +1641,82 @@ class OrderHistoryResponse {
   final int total;
 
   OrderHistoryResponse({required this.orders, required this.total});
+}
+
+/// Response from POST /api/coupons/validate
+class CouponValidateResponse {
+  final bool valid;
+  final String? error;
+  final String? couponId;
+  final String? code;
+  final String? discountType;
+  final double? discountValue;
+  final double? discountAmount;
+  final double? maxDiscountCap;
+  final String? description;
+
+  CouponValidateResponse({
+    required this.valid,
+    this.error,
+    this.couponId,
+    this.code,
+    this.discountType,
+    this.discountValue,
+    this.discountAmount,
+    this.maxDiscountCap,
+    this.description,
+  });
+
+  factory CouponValidateResponse.fromJson(Map<String, dynamic> json) {
+    if (json['valid'] != true) {
+      return CouponValidateResponse(
+        valid: false,
+        error: json['error'] as String? ?? 'Invalid coupon',
+      );
+    }
+    final c = json['coupon'] as Map<String, dynamic>? ?? {};
+    return CouponValidateResponse(
+      valid: true,
+      couponId: c['id'] as String?,
+      code: c['code'] as String?,
+      discountType: c['discount_type'] as String?,
+      discountValue: (c['discount_value'] as num?)?.toDouble(),
+      discountAmount: (c['discount_amount'] as num?)?.toDouble(),
+      maxDiscountCap: (c['max_discount_cap'] as num?)?.toDouble(),
+      description: c['description'] as String?,
+    );
+  }
+}
+
+/// Response from GET /api/home/suggestions
+class HomeSuggestionsResponse {
+  final String timeOfDay;
+  final String greeting;
+  final List<Map<String, dynamic>> suggestedRestaurants;
+  final List<Map<String, dynamic>> allRestaurants;
+  final List<String> favoriteCuisines;
+
+  HomeSuggestionsResponse({
+    required this.timeOfDay,
+    required this.greeting,
+    required this.suggestedRestaurants,
+    required this.allRestaurants,
+    required this.favoriteCuisines,
+  });
+
+  factory HomeSuggestionsResponse.fromJson(Map<String, dynamic> json) {
+    return HomeSuggestionsResponse(
+      timeOfDay: json['time_of_day'] as String? ?? 'afternoon',
+      greeting: json['greeting'] as String? ?? 'Hello! 👋',
+      suggestedRestaurants: (json['suggested_restaurants'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>(),
+      allRestaurants: (json['all_restaurants'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>(),
+      favoriteCuisines: (json['favorite_cuisines'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+    );
+  }
 }
 
 class ApiException implements Exception {

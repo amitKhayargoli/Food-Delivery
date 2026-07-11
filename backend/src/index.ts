@@ -14,6 +14,10 @@ import restaurantsRoutes from './routes/restaurants.routes';
 import locationRoutes from './routes/location.routes';
 import ratingsRoutes from './routes/ratings.routes';
 import dispatchRoutes from './routes/dispatch.routes';
+import couponRoutes from './routes/coupons.routes';
+import homeRoutes from './routes/home.routes';
+import supportRoutes from './routes/support.routes';
+import problemRoutes from './routes/problems.routes';
 import { supabase } from './db/supabase';
 import { startStaleRiderCleanup } from './services/stale-rider-cleanup.service';
 import { startAssignmentTimeoutScanner } from './services/assignment-timeout.service';
@@ -51,6 +55,10 @@ app.use('/api/restaurants', restaurantsRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/ratings', ratingsRoutes);
 app.use('/api/dispatch', dispatchRoutes);
+app.use('/api/home', homeRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/problems', problemRoutes);
 
 const PORT = Number(process.env.PORT) || 5000;
 

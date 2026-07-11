@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/services/api_service.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import 'owner_coupon_management_screen.dart';
 
 class ManageRestaurantScreen extends StatefulWidget {
   const ManageRestaurantScreen({super.key});
@@ -647,6 +648,72 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
             ),
           ),
 
+          const SizedBox(height: 32),
+
+          // ── Coupons Section ──
+          _buildSectionHeader('Promotions & Coupons'),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const OwnerCouponManagementScreen(),
+                ),
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.local_offer_rounded,
+                      size: 24,
+                      color: Color(0xFFF9A825),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Manage Coupons',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1C1C),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Create and manage discount codes',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF8E8E93),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Color(0xFFBFBFBF), size: 24),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 40),
 
           // Save button at the bottom

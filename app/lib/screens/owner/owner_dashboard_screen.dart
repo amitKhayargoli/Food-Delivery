@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
@@ -6,9 +7,11 @@ import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
 import '../../widgets/toggle_switch.dart';
+import '../../widgets/rider_map_view.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
 import '../user/order_detail_screen.dart';
+import '../full_screen_map_screen.dart';
 import 'manage_restaurant_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
@@ -31,11 +34,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Timer? _searchDebounce;
   sb.RealtimeChannel? _orderChannel;
 
+  /// Problem reports for the owner's restaurant
+  List<Map<String, dynamic>> _problems = [];
+  bool _isLoadingProblems = false;
+
   /// The restaurant's lat/lng, used for getNearbyRiders queries.
   /// Fetched once from getMyApplication on init.
   double? _restaurantLat;
   double? _restaurantLng;
   bool _isAssigning = false;
+
+  /// Live rider locations keyed by order ID (for riders assigned to orders).
+  /// Updated via Realtime subscriptions to the rider_locations table.
+  final Map<String, RiderMapPoint> _riderLocations = {};
+
+  /// Realtime channels for each assigned rider, keyed by rider ID.
+  final Map<String, sb.RealtimeChannel> _riderChannels = {};
 
   @override
   void initState() {
@@ -43,6 +57,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     _fetchOrders();
     _fetchRestaurantSettings();
     _fetchRestaurantLocation();
+    _fetchProblems();
   }
 
   /// Fetch the restaurant's stored lat/lng from the application record.
@@ -60,11 +75,126 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     } catch (_) {}
   }
 
+  // ── Rider Live Location Tracking ──────────────
+
+  /// Subscribe to live location updates for a rider assigned to an order.
+  void _subscribeToRiderLocation(String orderId, String riderId) {
+    // Each order gets its own channel (same rider on multiple orders is fine)
+    if (_riderChannels.containsKey(orderId)) return;
+
+    try {
+      final channel = SupabaseClientService.client.channel('owner-rider-location-$riderId');
+
+      channel.onPostgresChanges(
+        event: sb.PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'rider_locations',
+        callback: (payload) {
+          final record = payload.newRecord;
+          if (record['user_id']?.toString() != riderId) return;
+          final lat = record['latitude'] as num?;
+          final lng = record['longitude'] as num?;
+          if (lat == null || lng == null) return;
+
+          if (mounted) {
+            setState(() {
+              _riderLocations[orderId] = RiderMapPoint(
+                latitude: lat.toDouble(),
+                longitude: lng.toDouble(),
+                label: 'Rider',
+                type: RiderMapPointType.rider,
+              );
+            });
+          }
+        },
+      );
+
+      channel.subscribe((status, [error]) {
+        debugPrint('[RT-OwnerRider] Channel status: $status for rider $riderId');
+        if (error != null) debugPrint('[RT-OwnerRider] Error: $error');
+      });
+
+      _riderChannels[orderId] = channel;
+
+      // Fetch initial location immediately via REST
+      _fetchRiderLocation(orderId, riderId);
+    } catch (e) {
+      debugPrint('[RT-OwnerRider] Setup error: $e');
+    }
+  }
+
+  /// Fetch the rider's current location via REST (initial state before Realtime).
+  Future<void> _fetchRiderLocation(String orderId, String riderId) async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final location = await api.getRiderLocation(riderId: riderId, token: token);
+      if (location == null || !mounted) return;
+
+      final lat = location['latitude'] as num?;
+      final lng = location['longitude'] as num?;
+      if (lat == null || lng == null) return;
+
+      setState(() {
+        _riderLocations[orderId] = RiderMapPoint(
+          latitude: lat.toDouble(),
+          longitude: lng.toDouble(),
+          label: 'Rider',
+          type: RiderMapPointType.rider,
+        );
+      });
+    } catch (e) {
+      debugPrint('[RT-OwnerRider] Fetch error: $e');
+    }
+  }
+
+  /// Subscribe to all riders currently assigned to ready orders.
+  void _subscribeToAllAssignedRiders() {
+    for (final order in _readyOrders) {
+      final riderId = order.deliveryBoyId;
+      if (riderId != null && riderId.isNotEmpty) {
+        _subscribeToRiderLocation(order.id, riderId);
+      }
+    }
+  }
+
+  /// Unsubscribe from all rider location channels.
+  void _unsubscribeFromAllRiderLocations() {
+    for (final channel in _riderChannels.values) {
+      SupabaseClientService.client.removeChannel(channel);
+    }
+    _riderChannels.clear();
+  }
+
+  /// Estimate rider's ETA to the restaurant using Haversine distance.
+  int? _estimateRiderEtaMinutes(String orderId) {
+    final riderLoc = _riderLocations[orderId];
+    if (riderLoc == null || _restaurantLat == null || _restaurantLng == null) {
+      return null;
+    }
+
+    const double avgSpeedKmh = 20.0;
+    const double R = 6371;
+
+    final double dLat = _deg2rad(_restaurantLat! - riderLoc.latitude);
+    final double dLon = _deg2rad(_restaurantLng! - riderLoc.longitude);
+    final double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(riderLoc.latitude) * cos(_restaurantLat!) * sin(dLon / 2) * sin(dLon / 2);
+    final double c = 2 * asin(sqrt(a));
+    final int minutes = ((R * c) / avgSpeedKmh * 60).round();
+    return minutes < 1 ? 1 : minutes;
+  }
+
+  double _deg2rad(double deg) => deg * (pi / 180.0);
+
   @override
   void dispose() {
     _searchController.dispose();
     _searchDebounce?.cancel();
     _unsubscribeFromOrders();
+    _unsubscribeFromAllRiderLocations();
     super.dispose();
   }
 
@@ -131,7 +261,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       case 0: return _newOrders;
       case 1: return _preparingOrders;
       case 2: return _readyOrders;
-      default: return _newOrders;
+      default: return []; // Problems handled separately
     }
   }
 
@@ -166,6 +296,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       } else {
         _subscribeWithRestaurantIdFallback();
       }
+
+      // Clean up stale rider subscriptions and re-subscribe
+      _unsubscribeFromAllRiderLocations();
+      _riderLocations.clear();
+      _subscribeToAllAssignedRiders();
     } on ApiException catch (e) {
       setState(() {
         _error = e.message;
@@ -439,6 +574,66 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     }
   }
 
+  // ── Problem Reports ─────────────────────────
+
+  Future<void> _fetchProblems() async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isLoadingProblems = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      final problems = await api.getRestaurantProblems(token: token);
+      if (!mounted) return;
+      setState(() {
+        _problems = problems;
+        _isLoadingProblems = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingProblems = false);
+    }
+  }
+
+  Future<void> _handleProblemStatus({
+    required String problemId,
+    required String status,
+    String? adminNote,
+    double? refundAmount,
+  }) async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.updateProblemStatus(
+        problemId: problemId,
+        status: status,
+        adminNote: adminNote,
+        refundAmount: refundAmount,
+        token: token,
+      );
+      if (!mounted) return;
+      _fetchProblems();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Report ${status == 'APPROVED' ? 'approved' : 'rejected'}.'),
+          backgroundColor: status == 'APPROVED'
+              ? const Color(0xFF1E8E3E)
+              : const Color(0xFFBB0018),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
   // ── Time formatting ──────────────────────────
 
   String _timeAgo(DateTime dateTime) {
@@ -639,7 +834,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       decoration: BoxDecoration(
         color: _isAcceptingOrders
             ? const Color(0xFFE6F4EA)
-            : const Color(0xFFFFF1F0),
+            : Colors.white,
         borderRadius: BorderRadius.circular(9999),
         border: Border.all(
           color: _isAcceptingOrders
@@ -688,13 +883,14 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         height: 30,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: 3,
+          itemCount: 4,
           separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (context, index) {
             final tabs = [
               ('New', _newOrders.length),
               ('Preparing', _preparingOrders.length),
               ('Ready', _readyOrders.length),
+              ('Problems', _problems.length),
             ];
             final (label, count) = tabs[index];
             final isActive = _selectedTab == index;
@@ -778,6 +974,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         ),
       );
     }
+
+    if (_selectedTab == 3) return _buildProblemsTab();
 
     if (_currentOrders.isEmpty) {
       return RefreshIndicator(
@@ -1122,7 +1320,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
     switch (status) {
       case OrderStatus.created:
-        bgColor = const Color(0xFFFFF1F0);
+        bgColor = Colors.white;
         textColor = const Color(0xFFBB0018);
         label = 'New';
       case OrderStatus.accepted:
@@ -1285,6 +1483,27 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       case 2: // Ready
         final bool isAssigned = order.deliveryBoyId != null && order.deliveryBoyId!.isNotEmpty;
         final String? riderName = order.deliveryBoyName;
+        final hasRiderLocation =
+            isAssigned && _riderLocations.containsKey(order.id);
+        final riderLoc = _riderLocations[order.id];
+        final etaMinutes = isAssigned ? _estimateRiderEtaMinutes(order.id) : null;
+
+        // Build map points once, reused by both RiderMapView and FullScreenMapScreen
+        final pickupLoc = RiderMapPoint(
+          latitude: _restaurantLat ?? 0,
+          longitude: _restaurantLng ?? 0,
+          label: 'Restaurant',
+          type: RiderMapPointType.pickup,
+        );
+        final dropoffLoc = order.deliveryAddress?.latitude != null &&
+                order.deliveryAddress?.longitude != null
+            ? RiderMapPoint(
+                latitude: order.deliveryAddress!.latitude!,
+                longitude: order.deliveryAddress!.longitude!,
+                label: 'Delivery',
+                type: RiderMapPointType.dropoff,
+              )
+            : null;
 
         return Column(
           children: [
@@ -1340,6 +1559,130 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               ),
             ),
 
+            // ── Rider Live Location (only when rider is assigned) ──
+            if (isAssigned) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F8FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF1967D2).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Rider info header ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.my_location_rounded,
+                              size: 16, color: Color(0xFF1967D2)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              hasRiderLocation
+                                  ? etaMinutes != null
+                                      ? 'Rider ~$etaMinutes min away'
+                                      : 'Rider nearby'
+                                  : 'Loading rider location...',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1967D2),
+                              ),
+                            ),
+                          ),
+                          if (hasRiderLocation)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF34C759),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    // ── Mini map ──
+                    if (hasRiderLocation &&
+                        _restaurantLat != null &&
+                        _restaurantLng != null &&
+                        riderLoc != null)
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(12)),
+                        child: SizedBox(
+                          height: 130,
+                          child: RiderMapView(
+                            riderLocation: riderLoc,
+                            pickupLocation: pickupLoc,
+                            dropoffLocation: dropoffLoc,
+                            height: 130,
+                            showEtaBar: false,
+                            etaText: etaMinutes != null
+                                ? '$etaMinutes min'
+                                : null,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => FullScreenMapScreen(
+                                    riderLocation: riderLoc,
+                                    riderId: order.deliveryBoyId ?? '',
+                                    pickupLocation: pickupLoc,
+                                    dropoffLocation: dropoffLoc,
+                                    etaText: etaMinutes != null
+                                        ? '$etaMinutes min'
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                    // ── ETA bar at bottom if map is shown ──
+                    if (hasRiderLocation && etaMinutes != null &&
+                        _restaurantLat != null && _restaurantLng != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE8F0FE),
+                          borderRadius: BorderRadius.vertical(
+                              bottom: Radius.circular(12)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.access_time_rounded,
+                                size: 14, color: Color(0xFF1967D2)),
+                            const SizedBox(width: 4),
+                            Text(
+                              etaMinutes <= 1
+                                  ? 'Arriving now'
+                                  : 'Rider arriving in $etaMinutes min',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1C1C),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 12),
 
             // ── Assign / Reassign button ──
@@ -1391,6 +1734,345 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  // ── Problems Tab ─────────────────────────────
+
+  Widget _buildProblemsTab() {
+    if (_isLoadingProblems) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text('Loading reports...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    if (_problems.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.flag_outlined, size: 48, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text('No problem reports yet',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 16, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 4),
+            const Text('Customer issues will appear here',
+                style: TextStyle(color: Color(0xFFBFBFBF), fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchProblems,
+      color: const Color(0xFFBB0018),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        itemCount: _problems.length,
+        itemBuilder: (context, index) => _buildProblemCard(_problems[index]),
+      ),
+    );
+  }
+
+  Widget _buildProblemCard(Map<String, dynamic> problem) {
+    final status = problem['status'] as String? ?? 'PENDING';
+    final issueType = problem['issue_type'] as String? ?? '';
+    final description = problem['description'] as String? ?? '';
+    final customerName = problem['customer_name'] as String? ?? 'Unknown';
+    final orderNumber = problem['order_number'] as String? ?? '';
+    final isPending = status == 'PENDING';
+
+    final typeLabels = {
+      'wrong_item': 'Wrong Item',
+      'missing_item': 'Missing Item',
+      'quality': 'Food Quality',
+      'other': 'Other Issue',
+    };
+    final typeIcons = {
+      'wrong_item': Icons.fastfood_outlined,
+      'missing_item': Icons.inventory_2_outlined,
+      'quality': Icons.thumb_down_outlined,
+      'other': Icons.more_horiz,
+    };
+
+    Color statusColor;
+    String statusLabel;
+    switch (status) {
+      case 'APPROVED':
+        statusColor = const Color(0xFF1E8E3E);
+        statusLabel = 'Approved';
+      case 'REJECTED':
+        statusColor = const Color(0xFFBB0018);
+        statusLabel = 'Rejected';
+      default:
+        statusColor = const Color(0xFFF9A825);
+        statusLabel = 'Pending';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: isPending
+            ? Border.all(color: const Color(0xFFF9A825).withValues(alpha: 0.3))
+            : null,
+        boxShadow: [BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 8, offset: const Offset(0, 3),
+        )],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: isPending ? const Color(0xFFFFF8E1) : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  typeIcons[issueType] ?? Icons.flag_outlined,
+                  size: 20,
+                  color: isPending ? const Color(0xFFF9A825) : const Color(0xFF8E8E93),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(typeLabels[issueType] ?? issueType,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1C1C))),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(statusLabel,
+                              style: TextStyle(
+                                  fontSize: 10, fontWeight: FontWeight.w600,
+                                  color: statusColor)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text('$customerName • Order $orderNumber',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(description,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF5C5C5C))),
+            ),
+          ],
+
+          // Action buttons (only for pending)
+          if (isPending) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 40,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showRejectDialog(problem),
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      label: const Text('Reject',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFBB0018),
+                        side: const BorderSide(color: Color(0xFFBB0018)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 40,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showApproveDialog(problem),
+                      icon: const Icon(Icons.check_circle, size: 16),
+                      label: const Text('Approve Refund',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E8E3E),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showApproveDialog(Map<String, dynamic> problem) async {
+    final noteCtrl = TextEditingController();
+    final refundCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Approve Refund',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Approve the refund for this problem report?',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C))),
+              const SizedBox(height: 12),
+              TextField(
+                controller: refundCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Refund amount (e.g. 250)',
+                  hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.all(10),
+                  isDense: true,
+                  prefixText: 'Rs. ',
+                  prefixStyle: const TextStyle(color: Color(0xFF1A1C1C), fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteCtrl,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Add a note (optional)',
+                  hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.all(10),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF8E8E93))),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E8E3E),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              child: const Text('Approve', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      final refundText = refundCtrl.text.trim();
+      await _handleProblemStatus(
+        problemId: problem['id'] as String? ?? '',
+        status: 'APPROVED',
+        adminNote: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
+        refundAmount: refundText.isNotEmpty ? double.tryParse(refundText) : null,
+      );
+    }
+    noteCtrl.dispose();
+    refundCtrl.dispose();
+  }
+
+  Future<void> _showRejectDialog(Map<String, dynamic> problem) async {
+    final noteCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Reject Report',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Reject this problem report? The customer will be notified.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: 'Reason for rejection (optional)',
+                hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.all(10),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF8E8E93))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFBB0018),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            child: const Text('Reject', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _handleProblemStatus(
+        problemId: problem['id'] as String? ?? '',
+        status: 'REJECTED',
+        adminNote: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
+      );
+    }
+    noteCtrl.dispose();
   }
 }
 
@@ -1640,7 +2322,7 @@ class _AssignDeliveryBoySheetState extends State<_AssignDeliveryBoySheet> {
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           leading: CircleAvatar(
-            backgroundColor: const Color(0xFFFFF1F0),
+            backgroundColor: Colors.white,
             radius: 22,
             child: const Icon(Icons.person, color: Color(0xFFBB0018), size: 22),
           ),

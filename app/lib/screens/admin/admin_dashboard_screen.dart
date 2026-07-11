@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../widgets/rider_map_view.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import '../user/support_chat_screen.dart';
+import 'admin_coupon_management_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -39,12 +42,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   int _onlineRiders = 0;
   int _onDeliveryRiders = 0;
 
+  // Orders tab
+  List<Order> _deliveredOrders = [];
+  bool _isLoadingOrders = false;
+  String? _ordersFilter;
+
+  // Support tab
+  List<Map<String, dynamic>> _supportConversations = [];
+  bool _isLoadingSupport = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _fetchRiders();
     _fetchPerformance();
+    _fetchDeliveredOrders();
+    _fetchSupportConversations();
   }
 
   @override
@@ -116,6 +130,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
+  /// Fetch all delivered orders for dispute resolution purposes.
+  Future<void> _fetchDeliveredOrders() async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isLoadingOrders = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      final rawOrders = await api.getAllOrders(token: token);
+      if (!mounted) return;
+      setState(() {
+        _deliveredOrders = rawOrders
+            .map((o) => Order.fromJson(o))
+            .where((o) => o.status == OrderStatus.delivered)
+            .toList();
+        _isLoadingOrders = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingOrders = false);
+    }
+  }
+
   // ── Create Rider ─────────────────────────────
 
   Future<void> _createRider() async {
@@ -178,6 +216,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
+  /// Fetch all support conversations for admin reply.
+  Future<void> _fetchSupportConversations() async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isLoadingSupport = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      final conversations = await api.getAllSupportConversations(token: token);
+      if (!mounted) return;
+      setState(() {
+        _supportConversations = conversations;
+        _isLoadingSupport = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingSupport = false);
+    }
+  }
+
   // ── Formatting ───────────────────────────────
 
   String _timeAgo(String? dt) {
@@ -234,6 +293,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             Tab(text: 'Riders'),
             Tab(text: 'Performance'),
             Tab(text: 'Add Rider'),
+            Tab(text: 'Coupons'),
+            Tab(text: 'Orders'),
+            Tab(text: 'Support'),
           ],
         ),
       ),
@@ -243,6 +305,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           _buildRidersTab(),
           _buildPerformanceTab(),
           _buildAddRiderTab(),
+          const AdminCouponManagementScreen(embedded: true),
+          _buildOrdersTab(),
+          _buildSupportTab(),
         ],
       ),
     );
@@ -1117,6 +1182,600 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
         ),
       ],
+    );
+  }
+
+  // ── Orders Tab (Dispute Resolution) ──────────
+
+  Widget _buildOrdersTab() {
+    if (_isLoadingOrders) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text('Loading orders...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    if (_deliveredOrders.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.receipt_long_rounded, size: 56, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text('No completed deliveries yet',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 16, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 4),
+            const Text('Delivered orders with photos will appear here',
+                style: TextStyle(color: Color(0xFFBFBFBF), fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    // Summary stats
+    final withPhoto = _deliveredOrders.where((o) => o.deliveryPhotoUrl != null && o.deliveryPhotoUrl!.isNotEmpty).length;
+    final withoutPhoto = _deliveredOrders.length - withPhoto;
+
+    return Column(
+      children: [
+        // Summary + filter
+        Container(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSummaryCard(
+                      icon: Icons.check_circle,
+                      label: 'Delivered',
+                      value: '${_deliveredOrders.length}',
+                      color: const Color(0xFF1E8E3E),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildSummaryCard(
+                      icon: Icons.camera_alt,
+                      label: 'With Photo',
+                      value: '$withPhoto',
+                      color: const Color(0xFF1967D2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildSummaryCard(
+                      icon: Icons.no_photography,
+                      label: 'No Photo',
+                      value: '$withoutPhoto',
+                      color: const Color(0xFFF9A825),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Filter chips
+              Row(
+                children: [
+                  _buildFilterChip('All', _ordersFilter == null, () {
+                    setState(() => _ordersFilter = null);
+                  }),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Has Photo', _ordersFilter == 'with_photo', () {
+                    setState(() => _ordersFilter = 'with_photo');
+                  }),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('No Photo', _ordersFilter == 'without_photo', () {
+                    setState(() => _ordersFilter = 'without_photo');
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Orders list
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetchDeliveredOrders,
+            color: const Color(0xFFBB0018),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: _filteredOrders.length,
+              itemBuilder: (context, index) => _buildDeliveredOrderCard(_filteredOrders[index]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Order> get _filteredOrders {
+    if (_ordersFilter == 'with_photo') {
+      return _deliveredOrders.where((o) => o.deliveryPhotoUrl != null && o.deliveryPhotoUrl!.isNotEmpty).toList();
+    }
+    if (_ordersFilter == 'without_photo') {
+      return _deliveredOrders.where((o) => o.deliveryPhotoUrl == null || o.deliveryPhotoUrl!.isEmpty).toList();
+    }
+    return _deliveredOrders;
+  }
+
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFBB0018) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFBB0018) : const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF8E8E93),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveredOrderCard(Order order) {
+    final hasPhoto = order.deliveryPhotoUrl != null && order.deliveryPhotoUrl!.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Photo status indicator
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: hasPhoto
+                      ? const Color(0xFFE6F4EA)
+                      : const Color(0xFFFFF1F0),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  hasPhoto ? Icons.camera_alt_rounded : Icons.no_photography_outlined,
+                  color: hasPhoto ? const Color(0xFF1E8E3E) : const Color(0xFFF5222D),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order.orderNumber}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Color(0xFF1A1C1C),
+                      ),
+                    ),
+                    if (order.restaurantName.isNotEmpty)
+                      Text(
+                        order.restaurantName,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8E8E93),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Photo badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: hasPhoto
+                      ? const Color(0xFFE6F4EA)
+                      : const Color(0xFFFFF1F0),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  hasPhoto ? 'Has Photo' : 'No Photo',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: hasPhoto ? const Color(0xFF1E8E3E) : const Color(0xFFF5222D),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Delivery photo thumbnail (if available)
+          if (hasPhoto) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => _showDeliveryPhotoFullScreen(order.deliveryPhotoUrl!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 160,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        order.deliveryPhotoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: const Color(0xFFF5F5F5),
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.broken_image_outlined,
+                                    size: 28, color: Color(0xFFBFBFBF)),
+                                SizedBox(height: 4),
+                                Text('Photo unavailable',
+                                    style: TextStyle(
+                                        fontSize: 12, color: Color(0xFFBFBFBF))),
+                              ],
+                            ),
+                          ),
+                        ),
+                        loadingBuilder: (_, child, progress) {
+                          if (progress == null) return child;
+                          return Container(
+                            color: const Color(0xFFF5F5F5),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Color(0xFFBB0018)),
+                            ),
+                          );
+                        },
+                      ),
+                      // Tap overlay
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.center,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.5),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.touch_app, size: 14, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('Tap to expand',
+                                  style: TextStyle(
+                                      fontSize: 11, color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 8),
+
+          // Order info row
+          Row(
+            children: [
+              const Icon(Icons.person_outline, size: 14, color: Color(0xFF8E8E93)),
+              const SizedBox(width: 4),
+              Text(
+                order.deliveryBoyName ?? 'Unknown rider',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF5C5C5C)),
+              ),
+              const Spacer(),
+              Text(
+                'Rs. ${order.total.toStringAsFixed(0)}',
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1C1C)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Support Tab (Admin agent replies) ───────
+
+  Widget _buildSupportTab() {
+    final openCount = _supportConversations.where((c) => c['status'] == 'OPEN').length;
+
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.headset_mic_rounded, color: Color(0xFFBB0018), size: 22),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Support Conversations',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1C1C))),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1F0),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$openCount',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFBB0018))),
+              ),
+            ],
+          ),
+        ),
+
+        Expanded(child: _buildSupportList()),
+      ],
+    );
+  }
+
+  Widget _buildSupportList() {
+    if (_isLoadingSupport) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text('Loading conversations...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    if (_supportConversations.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.headset_mic_rounded, size: 56, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text('No support conversations yet',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 16, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      );
+    }
+
+    final openFirst = List<Map<String, dynamic>>.from(_supportConversations)
+      ..sort((a, b) {
+        final aOpen = a['status'] == 'OPEN' ? 0 : 1;
+        final bOpen = b['status'] == 'OPEN' ? 0 : 1;
+        if (aOpen != bOpen) return aOpen.compareTo(bOpen);
+        return (b['updated_at'] as String? ?? '').compareTo(a['updated_at'] as String? ?? '');
+      });
+
+    return RefreshIndicator(
+      onRefresh: _fetchSupportConversations,
+      color: const Color(0xFFBB0018),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        itemCount: openFirst.length,
+        itemBuilder: (context, index) => _buildSupportCard(openFirst[index]),
+      ),
+    );
+  }
+
+  Widget _buildSupportCard(Map<String, dynamic> conv) {
+    final status = conv['status'] as String? ?? 'OPEN';
+    final subject = conv['subject'] as String? ?? '';
+    final lastMsg = conv['last_message'] as Map<String, dynamic>?;
+    final msgCount = (conv['message_count'] as num?)?.toInt() ?? 0;
+    final userInfo = conv['user'] as Map<String, dynamic>?;
+    final userName = userInfo?['username'] as String? ?? 'Unknown';
+    final isOpen = status == 'OPEN';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SupportChatScreen(
+              conversationId: conv['id'] as String? ?? '',
+              subject: subject,
+              isAdmin: true,
+            ),
+          ),
+        ).then((_) => _fetchSupportConversations());
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: isOpen
+              ? Border.all(color: const Color(0xFFBB0018).withValues(alpha: 0.2))
+              : null,
+          boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8, offset: const Offset(0, 3),
+          )],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: isOpen ? const Color(0xFFFFF1F0) : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isOpen ? Icons.chat_rounded : Icons.check_circle_outlined,
+                color: isOpen ? const Color(0xFFBB0018) : const Color(0xFF8E8E93),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(subject,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1C1C)),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isOpen ? const Color(0xFFFFF1F0) : const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(isOpen ? 'Open' : 'Closed',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w600,
+                                color: isOpen ? const Color(0xFFBB0018) : const Color(0xFF8E8E93))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.person_outline, size: 13, color: const Color(0xFF8E8E93)),
+                      const SizedBox(width: 4),
+                      Text(userName,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+                      const SizedBox(width: 12),
+                      Icon(Icons.chat_bubble_outline, size: 12, color: const Color(0xFFBFBFBF)),
+                      const SizedBox(width: 3),
+                      Text('$msgCount msgs',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFFBFBFBF))),
+                    ],
+                  ),
+                  if (lastMsg != null) ...[
+                    const SizedBox(height: 4),
+                    Text(lastMsg['message'] as String? ?? '',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF5C5C5C)),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFFBFBFBF)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show a delivery photo in a full-screen dialog.
+  void _showDeliveryPhotoFullScreen(String photoUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                photoUrl,
+                width: double.infinity,
+                height: MediaQuery.of(context).size.height * 0.5,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text('Failed to load photo',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: MediaQuery.of(context).size.height * 0.5,
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black38,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
