@@ -1030,7 +1030,7 @@ packages:
     source: hosted
     version: "3.0.0"
   maplibre_gl:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: maplibre_gl
       sha256: a66be9a877081b3316cf540e80355e823353e29f736a1f7d62317bf3150fef4f

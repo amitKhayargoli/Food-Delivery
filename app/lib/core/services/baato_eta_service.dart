@@ -128,8 +128,8 @@ class BaatoEtaService {
         response = await routeFetcher!(
           startCoordinate: start,
           endCoordinate: end,
-          mode: BaatoDirectionMode.car,
-          alternatives: false,
+          mode: BaatoDirectionMode.bike,
+          alternatives: true,  // Get multiple route options
           instructions: false,
           decodePolyline: false,
         );
@@ -137,8 +137,8 @@ class BaatoEtaService {
         response = await Baato.api.direction.getRoutes(
           startCoordinate: start,
           endCoordinate: end,
-          mode: BaatoDirectionMode.car,
-          alternatives: false,
+          mode: BaatoDirectionMode.bike,
+          alternatives: true,  // Get multiple route options
           instructions: false,
           decodePolyline: false,
         );
@@ -149,6 +149,12 @@ class BaatoEtaService {
         return const BaatoEtaResponse(error: 'No route found');
       }
 
+      // Pick the SHORTEST route by distance for the most accurate ETA
+      if (routes.length > 1) {
+        routes.sort((a, b) =>
+          (a.distanceInMeters ?? double.infinity)
+              .compareTo(b.distanceInMeters ?? double.infinity));
+      }
       final route = routes.first;
       final distanceM = route.distanceInMeters;
       final timeMs = route.timeInMs;

@@ -16,6 +16,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/rider_notes_provider.dart';
 import '../notifications_screen.dart';
+import '../full_screen_map_screen.dart';
 
 
 class DeliveryJobsScreen extends StatefulWidget {
@@ -69,6 +70,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         if (_selectedTab == 1) _fetchRiderStats();
       }
     });
+    // Set up Realtime subscription BEFORE the initial fetch
+    // so no events are missed between the fetch and subscription start.
+    _setupRealtimeSubscription();
     _fetchJobs();
     _initRiderTracking();
   }
@@ -166,6 +170,13 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
 
   // ── Realtime Subscriptions ────────────────────
 
+  /// Set up the Realtime channel immediately (before the initial fetch)
+  /// to ensure no events are missed.
+  void _setupRealtimeSubscription() {
+    final userId = _userId;
+    if (userId != null) _subscribeToOrders(userId);
+  }
+
   void _subscribeToOrders(String userId) {
     _unsubscribeFromOrders();
     _orderChannel = SupabaseClientService.client.channel('delivery-jobs-$userId');
@@ -177,7 +188,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       callback: (payload) {
         final record = payload.newRecord;
         if (record['delivery_boy_id']?.toString() == userId) {
-          _fetchJobs();
+          _silentRefreshJobs();
         }
       },
     );
@@ -189,7 +200,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       callback: (payload) {
         final record = payload.newRecord;
         if (record['delivery_boy_id']?.toString() == userId) {
-          _fetchJobs();
+          _silentRefreshJobs();
         }
       },
     );
@@ -208,6 +219,36 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
   }
 
   // ── Data Fetching ────────────────────────────
+
+  /// Lightweight refresh triggered by Realtime events.
+  /// Fetches jobs in the background WITHOUT showing a loading spinner
+  /// or error state, so the UI doesn't flicker during live updates.
+  Future<void> _silentRefreshJobs() async {
+    final token = _token;
+    if (token == null) return;
+
+    // Ensure the Realtime subscription is active (idempotent —
+    // _subscribeToOrders calls _unsubscribeFromOrders first).
+    // Handles the edge case where auth wasn't ready in initState.
+    _setupRealtimeSubscription();
+
+    try {
+      final api = di.sl<ApiService>();
+      final rawOrders = await api.getMyDeliveryJobs(token: token);
+      if (!mounted) return;
+
+      // Dispose old rider note controllers since order list may have changed
+      for (final ctrl in _riderNoteCtrls.values) ctrl.dispose();
+      _riderNoteCtrls.clear();
+
+      setState(() {
+        _jobs = rawOrders.map((o) => Order.fromJson(o)).toList();
+        _error = null;
+      });
+    } catch (_) {
+      // Silently ignore — existing data stays as-is
+    }
+  }
 
   Future<void> _fetchJobs() async {
     final token = _token;
@@ -238,8 +279,10 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         _jobs = rawOrders.map((o) => Order.fromJson(o)).toList();
         _isLoading = false;
       });
-      final userId = _userId;
-      if (userId != null) _subscribeToOrders(userId);
+      // Ensure Realtime subscription is active (idempotent).
+      // This retries subscription setup on every pull-to-refresh,
+      // handling the edge case where auth wasn't ready in initState.
+      _setupRealtimeSubscription();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1038,25 +1081,47 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
             if (isMapExpanded) ...[
               const SizedBox(height: 8),
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: RiderMapView(
-                  riderLocation: RiderMapPoint(
-                    latitude: dropoff!.latitude!,
-                    longitude: dropoff.longitude!,
-                    label: 'Dropoff',
-                    type: RiderMapPointType.rider,
+                borderRadius: BorderRadius.circular(12),                  child: RiderMapView(
+                    riderLocation: RiderMapPoint(
+                      latitude: dropoff!.latitude!,
+                      longitude: dropoff.longitude!,
+                      label: 'Dropoff',
+                      type: RiderMapPointType.rider,
+                    ),
+                    dropoffLocation: RiderMapPoint(
+                      latitude: dropoff.latitude!,
+                      longitude: dropoff.longitude!,
+                      label: dropoff.fullAddress ?? 'Customer',
+                      type: RiderMapPointType.dropoff,
+                    ),
+                    showRoute: true,
+                    showEtaBar: false,
+                    height: 180,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => FullScreenMapScreen(
+                            riderLocation: RiderMapPoint(
+                              latitude: dropoff!.latitude!,
+                              longitude: dropoff.longitude!,
+                              label: 'You',
+                              type: RiderMapPointType.rider,
+                            ),
+                            riderId: _userId ?? '',
+                            dropoffLocation: RiderMapPoint(
+                              latitude: dropoff.latitude!,
+                              longitude: dropoff.longitude!,
+                              label: dropoff.fullAddress ?? 'Customer',
+                              type: RiderMapPointType.dropoff,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  dropoffLocation: RiderMapPoint(
-                    latitude: dropoff.latitude!,
-                    longitude: dropoff.longitude!,
-                    label: dropoff.fullAddress ?? 'Customer',
-                    type: RiderMapPointType.dropoff,
-                  ),
-                  showEtaBar: false,
-                  height: 180,
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
             ],
             const SizedBox(height: 4),
           ],

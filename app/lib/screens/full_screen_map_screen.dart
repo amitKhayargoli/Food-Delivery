@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:baato_maps/baato_maps.dart';
 // ignore: implementation_imports
 import 'package:baato_maps/src/map_core/implementation/baato_map_controller_impl.dart';
@@ -10,6 +11,9 @@ import '../core/services/supabase_client_service.dart';
 
 /// A full-screen map that shows the rider's live location alongside
 /// the pickup (restaurant) and dropoff (delivery) markers.
+///
+/// Uses Baato's native [markerManager.addMarker] API so markers correctly
+/// track their lat/lng coordinates as the rider moves and the user pans/zooms.
 ///
 /// Opened by tapping the mini map in the Owner Dashboard Ready tab.
 /// The map is centered on the rider's current location at zoom ~15 so
@@ -40,6 +44,9 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
   final BaatoMapController _mapController = BaatoMapControllerImpl();
   bool _isMapLoading = true;
 
+  /// Tracks which images have been loaded into the map sprite sheet.
+  final Set<String> _loadedImages = {};
+
   /// Live rider location — updated via Realtime subscription.
   /// Initialised from [widget.riderLocation] but kept fresh as the rider moves.
   late RiderMapPoint _liveRiderLocation;
@@ -54,8 +61,9 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
   /// Debounce timer to avoid excessive Baato Directions API calls.
   Timer? _routeRefreshDebounce;
 
-  /// Screen positions for Flutter overlay markers.
-  final Map<String, Offset> _markerScreenPositions = {};
+  /// Native Baato markers currently displayed on the map.
+  /// Cleared and re-added when locations or rider moves.
+  final List<Symbol> _currentMarkers = [];
 
   // ── Polling fallback ──
   Timer? _riderPollingTimer;
@@ -119,6 +127,7 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
     _unsubscribeFromRiderLocation();
     _routeRefreshDebounce?.cancel();
     _riderPollingTimer?.cancel();
+    _clearMarkers();
     super.dispose();
   }
 
@@ -130,7 +139,6 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
   }
 
   /// Center the map on the rider's current location with smooth animation.
-  /// Uses [_liveRiderLocation] which is kept updated via Realtime subscription.
   void _centerOnRider() {
     try {
       _mapController.cameraManager.moveTo(
@@ -146,60 +154,136 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
     }
   }
 
-  /// Calculate screen positions for overlay markers via toScreenLocation.
-  Future<void> _recalculateOverlayMarkers() async {
-    final controller = _mapController.libreController;
-    if (controller == null) {
-      debugPrint('[FullScreenMap] ⚠️ libreController null, retrying in 800ms');
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) _recalculateOverlayMarkers();
+  /// Clear all native Baato markers.
+  Future<void> _clearMarkers() async {
+    try {
+      await _mapController.markerManager.clearMarkers();
+      _currentMarkers.clear();
+    } catch (_) {}
+  }
+
+  /// Load the delivery guy image and the default Baato marker image into the
+  /// map sprite sheet so they can be used as native marker icons.
+  ///
+  /// The Baato SDK has `_addDefaultAssets()` commented out, so the `baato_marker`
+  /// image is never loaded automatically — we must load it ourselves.
+  Future<void> _loadMarkerImages() async {
+    // ── Load delivery guy image ──
+    if (!_loadedImages.contains('delivery_guy')) {
+      try {
+        final byteData = await rootBundle.load('assets/img/deliveryguy.png');
+        await _mapController.addImageFromData('delivery_guy', byteData);
+        _loadedImages.add('delivery_guy');
+        debugPrint('[FullScreenMap] ✅ Delivery guy image loaded');
+      } catch (e) {
+        debugPrint('[FullScreenMap] ⚠️ Delivery guy image load failed: $e');
+      }
+    }
+
+    // ── Load default Baato marker (needed for pickup/dropoff pins) ──
+    if (!_loadedImages.contains('baato_marker')) {
+      try {
+        final baatoMarkerData = await rootBundle.load(
+          'packages/baato_maps/lib/assets/markers/baato_marker.png',
+        );
+        await _mapController.addImageFromData('baato_marker', baatoMarkerData);
+        _loadedImages.add('baato_marker');
+        debugPrint('[FullScreenMap] ✅ Baato marker image loaded');
+      } catch (e) {
+        debugPrint('[FullScreenMap] ⚠️ Baato marker image load failed: $e');
+      }
+    }
+  }
+
+  /// Refresh all markers as native Baato symbols.
+  Future<void> _refreshNativeMarkers() async {
+    await _clearMarkers();
+    await _loadMarkerImages();
+
+    try {
+      // ── Rider marker ──
+      final riderSym = await _mapController.markerManager.addMarker(
+        BaatoSymbolOption(
+          geometry: BaatoCoordinate(
+            latitude: _liveRiderLocation.latitude,
+            longitude: _liveRiderLocation.longitude,
+          ),
+          iconImage: 'delivery_guy',
+          iconSize: 0.8,
+          textField: _liveRiderLocation.label,
+          textSize: 11,
+          textOffset: const Offset(0, 1.5),
+          textColor: '#D93025',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.0,
+          zIndex: 10,
+        ),
+      );
+      _currentMarkers.add(riderSym);
+
+      // ── Pickup / Restaurant marker ──
+      if (widget.pickupLocation != null) {
+        final pickupSym = await _mapController.markerManager.addMarker(
+          BaatoSymbolOption(
+            geometry: BaatoCoordinate(
+              latitude: widget.pickupLocation!.latitude,
+              longitude: widget.pickupLocation!.longitude,
+            ),
+            iconImage: 'baato_marker',
+            iconSize: 1.0,
+            textField: widget.pickupLocation!.label,
+            textSize: 11,
+            textOffset: const Offset(0, 1.5),
+            textColor: '#1E8E3E',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 1.0,
+          ),
+        );
+        _currentMarkers.add(pickupSym);
+      }
+
+      // ── Dropoff / Customer marker ──
+      if (widget.dropoffLocation != null) {
+        final dropoffSym = await _mapController.markerManager.addMarker(
+          BaatoSymbolOption(
+            geometry: BaatoCoordinate(
+              latitude: widget.dropoffLocation!.latitude,
+              longitude: widget.dropoffLocation!.longitude,
+            ),
+            iconImage: 'baato_marker',
+            iconSize: 1.0,
+            textField: widget.dropoffLocation!.label,
+            textSize: 11,
+            textOffset: const Offset(0, 1.5),
+            textColor: '#BB0018',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 1.0,
+          ),
+        );
+        _currentMarkers.add(dropoffSym);
+      }
+
+      debugPrint('[FullScreenMap] ✅ Added ${_currentMarkers.length} native markers');
+    } catch (e) {
+      debugPrint('[FullScreenMap] ❌ Native marker error: $e');
+    }
+  }
+
+  /// Called when rider location changes via Realtime — update marker + redraw route.
+  void _onRiderLocationChanged() {
+    // Refresh the rider marker position
+    _refreshNativeMarkers();
+
+    // Redraw route with new rider position
+    _routeRefreshDebounce?.cancel();
+    if (!_showRoute) return;
+    if (_isRouteLoading) {
+      _routeRefreshDebounce = Timer(const Duration(milliseconds: 500), () {
+        _onRiderLocationChanged();
       });
       return;
     }
-
-    try {
-      final newPositions = <String, Offset>{};
-
-      // Rider
-      final riderScreen = await controller.toScreenLocation(
-        LatLng(_liveRiderLocation.latitude, _liveRiderLocation.longitude),
-      );
-      newPositions['rider'] =
-          Offset(riderScreen.x.toDouble(), riderScreen.y.toDouble());
-
-      // Pickup
-      if (widget.pickupLocation != null) {
-        final pickupScreen = await controller.toScreenLocation(
-          LatLng(widget.pickupLocation!.latitude, widget.pickupLocation!.longitude),
-        );
-        newPositions['pickup'] =
-            Offset(pickupScreen.x.toDouble(), pickupScreen.y.toDouble());
-      }
-
-      // Dropoff
-      if (widget.dropoffLocation != null) {
-        final dropoffScreen = await controller.toScreenLocation(
-          LatLng(widget.dropoffLocation!.latitude, widget.dropoffLocation!.longitude),
-        );
-        newPositions['dropoff'] =
-            Offset(dropoffScreen.x.toDouble(), dropoffScreen.y.toDouble());
-      }
-
-      debugPrint('[FullScreenMap] Marker positions: ${newPositions.keys.join(", ")}');
-
-      if (mounted) {
-        setState(() {
-          _markerScreenPositions
-            ..clear()
-            ..addAll(newPositions);
-        });
-      }
-    } catch (e) {
-      debugPrint('[FullScreenMap] ❌ Marker conversion error: $e - retrying');
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        if (mounted) _recalculateOverlayMarkers();
-      });
-    }
+    _fetchAndDrawRoute();
   }
 
   // ──────────────────────────────────────────────
@@ -207,8 +291,7 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
   // ──────────────────────────────────────────────
 
   /// Fetch the route from rider → pickup → dropoff using the Baato Directions
-  /// API and draw it on the map. Uses [midCoordinates] to route through the
-  /// restaurant pickup location as a waypoint.
+  /// API and draw it on the map.
   Future<void> _fetchAndDrawRoute() async {
     if (_isRouteLoading) return;
 
@@ -235,21 +318,44 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
       }
 
       // Fetch route from Baato Directions API
-      final route = await Baato.api.direction.getRoutes(
+      final routeResult = await Baato.api.direction.getRoutes(
         startCoordinate: riderCoord,
         endCoordinate: dropoffCoord,
         midCoordinates: midCoords,
-        mode: BaatoDirectionMode.car,
+        mode: BaatoDirectionMode.bike,
+        alternatives: true,  // Get multiple route options
         decodePolyline: true,
       );
 
-      // Draw new route first (smooth transition, no blink)
+      // Pick the SHORTEST route by distance (not the default fastest)
+      final BaatoRouteResponse shortestRoute;
+      if (routeResult.data != null && routeResult.data!.length > 1) {
+        routeResult.data!.sort((a, b) =>
+          (a.distanceInMeters ?? double.infinity)
+              .compareTo(b.distanceInMeters ?? double.infinity));
+        shortestRoute = BaatoRouteResponse(
+          routeResult.timestamp,
+          routeResult.status,
+          routeResult.message,
+          [routeResult.data!.first],
+        );
+        debugPrint('[FullScreenMap] ✅ Selected shortest route: '
+            '${routeResult.data!.first.distanceInMeters?.toStringAsFixed(0)}m '
+            '(from ${routeResult.data!.length} alternatives)');
+      } else {
+        shortestRoute = routeResult;
+      }
+
+      // Draw the shortest route (smooth transition, no blink)
       await _mapController.routeManager.drawRouteFromResponse(
-        route,
+        shortestRoute,
         lineLayerProperties: BaatoLineLayerProperties(
-          lineColor: '#D93025',
-          lineWidth: 4.0,
-          lineOpacity: 0.8,
+          lineColor: '#FF6B35',
+          lineWidth: 5.0,
+          lineOpacity: 0.85,
+          lineBlur: 1.5,
+          lineCap: 'round',
+          lineJoin: 'round',
         ),
       );
 
@@ -265,23 +371,19 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
   Future<void> _toggleRoute() async {
     _routeRefreshDebounce?.cancel();
     if (_showRoute) {
-      // Hide route
       try {
         await _mapController.routeManager.clearRoute();
       } catch (_) {}
       if (mounted) setState(() => _showRoute = false);
     } else {
-      // Show route (re-fetch from live location)
       await _fetchAndDrawRoute();
     }
   }
 
   /// Poll rider location via Supabase REST as fallback when Realtime is silent.
-  /// Only fires if no Realtime update was received within [_pollingInterval].
   void _startPollingFallback() {
     _riderPollingTimer?.cancel();
     _riderPollingTimer = Timer.periodic(_pollingInterval, (_) async {
-      // Skip polling if Realtime is alive
       if (_lastRealtimeUpdate != null &&
           DateTime.now().difference(_lastRealtimeUpdate!) < _pollingInterval) {
         return;
@@ -316,20 +418,6 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
         debugPrint('[FullScreenMap-RT] Polling fetch failed: $e');
       }
     });
-  }
-
-  /// Redraw the route when rider location changes via Realtime.
-  /// Calls the API directly if not already loading; retries after 500ms if busy.
-  void _onRiderLocationChanged() {
-    _routeRefreshDebounce?.cancel();
-    if (!_showRoute) return;
-    if (_isRouteLoading) {
-      _routeRefreshDebounce = Timer(const Duration(milliseconds: 500), () {
-        _onRiderLocationChanged();
-      });
-      return;
-    }
-    _fetchAndDrawRoute();
   }
 
   @override
@@ -386,7 +474,7 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
       ),
       body: Stack(
         children: [
-          // ── Baato Map ──
+          // ── Baato Map (native markers are rendered by the map engine) ──
           BaatoMap(
             controller: _mapController,
             style: BaatoMapStyle.breeze,
@@ -398,98 +486,20 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
             myLocationEnabled: false,
             onMapCreated: (controller) {
               setState(() => _isMapLoading = false);
-              // Draw route immediately (separate from markers)
+              // Draw route immediately
               if (widget.dropoffLocation != null) {
                 Future.delayed(const Duration(milliseconds: 800), () {
                   _fetchAndDrawRoute();
                 });
               }
-              // Position overlay markers later (after map settles)
-              Future.delayed(const Duration(milliseconds: 1200), () {
-                _recalculateOverlayMarkers();
+              // Add native markers (after map style loads)
+              Future.delayed(const Duration(milliseconds: 800), () {
+                _refreshNativeMarkers();
               });
             },
           ),
 
-          // ── Overlay markers (rider image, emojis) ──
-          // Rider marker (custom image)
-          if (_markerScreenPositions.containsKey('rider'))
-            Positioned(
-              left: _markerScreenPositions['rider']!.dx - 22,
-              top: _markerScreenPositions['rider']!.dy - 35,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/img/deliveryguy.png',
-                    width: 36, height: 36,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.delivery_dining, size: 30, color: Color(0xFFD93025)),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(_liveRiderLocation.label,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1C1C)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Pickup / Restaurant marker (emoji)
-          if (_markerScreenPositions.containsKey('pickup'))
-            Positioned(
-              left: _markerScreenPositions['pickup']!.dx - 18,
-              top: _markerScreenPositions['pickup']!.dy - 28,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('🏪', style: TextStyle(fontSize: 28)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('Restaurant',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E8E3E)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Dropoff / Customer marker (emoji)
-          if (_markerScreenPositions.containsKey('dropoff'))
-            Positioned(
-              left: _markerScreenPositions['dropoff']!.dx - 18,
-              top: _markerScreenPositions['dropoff']!.dy - 28,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('📍', style: TextStyle(fontSize: 28)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(widget.dropoffLocation?.label ?? 'Delivery',
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Color(0xFFBB0018)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // ── Find Rider FAB (re-centers map on rider's live location) ──
-          // ── FABs (top-right) ──
+          // ── Find Rider FAB (top-right) ──
           if (!_isMapLoading)
             Positioned(
               right: 16,
@@ -571,6 +581,8 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    const Text('🛵', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 4),
                     Container(
                       width: 20,
                       height: 3,
@@ -581,7 +593,7 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
                     ),
                     const SizedBox(width: 6),
                     const Text(
-                      'Route',
+                      'Bike Route',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -637,7 +649,7 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _legendItem('Rider', const Color(0xFFD93025)),
+                        _legendItem('🛵 Rider', const Color(0xFFD93025)),
                         const SizedBox(width: 20),
                         _legendItem('Restaurant', const Color(0xFF1E8E3E)),
                         const SizedBox(width: 20),

@@ -346,7 +346,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       callback: (payload) {
         final record = payload.newRecord;
         if (record['restaurant_id']?.toString() == restaurantId) {
-          _fetchOrders();
+          _silentRefreshOrders();
         }
       },
     );
@@ -358,7 +358,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       callback: (payload) {
         final record = payload.newRecord;
         if (record['restaurant_id']?.toString() == restaurantId) {
-          _fetchOrders();
+          _silentRefreshOrders();
         }
       },
     );
@@ -403,6 +403,36 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   }
 
   // ── Data fetching ────────────────────────────
+
+  /// Lightweight refresh triggered by Realtime events.
+  /// Fetches orders in the background WITHOUT showing a loading spinner,
+  /// so the UI doesn't flicker during live updates (new orders, status
+  /// changes, rider assignments, etc.).
+  ///
+  /// Also subscribes to any newly assigned riders for live location
+  /// tracking — [_subscribeToRiderLocation] checks for duplicates so
+  /// existing subscriptions are untouched.
+  Future<void> _silentRefreshOrders() async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final rawOrders = await api.getRestaurantOrders(token: token);
+      if (!mounted) return;
+
+      setState(() {
+        _allOrders = rawOrders.map((o) => Order.fromJson(o)).toList();
+        _error = null;
+      });
+
+      // Subscribe to any newly assigned riders for live location tracking.
+      // Safe to call multiple times — existing subscriptions are skipped.
+      _subscribeToAllAssignedRiders();
+    } catch (_) {
+      // Silently ignore — existing data stays as-is
+    }
+  }
 
   Future<void> _fetchOrders() async {
     final token = _token;
