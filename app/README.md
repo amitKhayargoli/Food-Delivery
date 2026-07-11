@@ -49,10 +49,9 @@ Use the launch config `Flutter (Supabase Env)` from `.vscode/launch.json`.
 
 Complete this sequence before testing Google auth:
 
-1. Enable Google provider in Supabase Auth and set redirect URL `rasoi://login-callback`.
-2. In Firebase/Google Cloud, register Android app package `com.example.app` with your debug SHA-1.
-3. Download `google-services.json` and place it at `android/app/google-services.json`.
-4. Set `GOOGLE_WEB_CLIENT_ID` in `env/dev.json`.
-5. Run with `--dart-define-from-file=env/dev.json`.
+1. Enable Google provider in Supabase Auth with your Web OAuth client ID.
+2. In Google Cloud Console, create an Android OAuth client with package `com.example.app` and your debug SHA-1.
+3. Set `GOOGLE_WEB_CLIENT_ID` (the Web OAuth client ID) in `env/dev.json`.
+4. Run with `--dart-define-from-file=env/dev.json`.
 
 Expected behavior after setup: tapping Google sign-in on login/signup opens native account chooser in-app (no external browser tab).

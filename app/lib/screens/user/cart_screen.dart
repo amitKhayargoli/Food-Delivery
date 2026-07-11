@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lottie/lottie.dart';
 import '../../cart_provider.dart';
 import '../../state_providers.dart';
 import 'checkout_screen.dart';
@@ -27,14 +28,20 @@ class CartScreen extends ConsumerWidget {
       return Scaffold(
         backgroundColor: Colors.white,
         appBar: _buildAppBar(context, ref, false),
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.shopping_bag_outlined,
-                  size: 64, color: Color(0xFFD9D9D9)),
-              SizedBox(height: 16),
-              Text(
+              SizedBox(
+                width: 200,
+                height: 200,
+                child: Lottie.asset(
+                  'assets/animations/done.json',
+                  repeat: false,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
                 'Your cart is empty',
                 style: TextStyle(
                   color: Color(0xFF999999),
@@ -42,13 +49,38 @@ class CartScreen extends ConsumerWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              SizedBox(height: 8),
-              Text(
+              const SizedBox(height: 8),
+              const Text(
                 'Add items from a restaurant to get started',
                 style: TextStyle(
                   color: Color(0xFFBFBFBF),
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
+                ),
+              ),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                child: Container(
+                  width: 200,
+                  height: 48,
+                  decoration: ShapeDecoration(
+                    color: Color(0xFFF5222D),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Browse Restaurants',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],

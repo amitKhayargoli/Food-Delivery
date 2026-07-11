@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
 import 'restaurant_menu_screen.dart';
 import 'delivery_address_map_screen.dart';
 import 'selected_delivery_location.dart';
@@ -52,6 +53,19 @@ class SearchFilters {
   }
 }
 
+/// A simple category derived from restaurant cuisine types
+class CuisineCategory {
+  final String id;
+  final String name;
+  final String imageUrl;
+
+  const CuisineCategory({
+    required this.id,
+    required this.name,
+    this.imageUrl = '',
+  });
+}
+
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -66,9 +80,99 @@ class _SearchScreenState extends State<SearchScreen> {
   String _searchQuery = '';
   SearchFilters _filters = const SearchFilters();
 
-  // ── Recent Searches (max 8, most recent first, deduped) ──
+  // API data state
+  List<Restaurant> _allRestaurants = [];
+  List<CuisineCategory> _cuisineCategories = [];
+  bool _isLoading = true;
+  String? _error;
+
+  // ── Recent Searches ──
   static const int _maxRecentSearches = 8;
   List<String> _recentSearches = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRestaurants();
+  }
+
+  Future<void> _fetchRestaurants() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final raw = await api.getRestaurants();
+      final restaurants = raw.map((r) => Restaurant.fromJson(r)).toList();
+
+      // Derive cuisine categories from restaurant cuisine types
+      final cuisineSet = <String>{};
+      for (final r in restaurants) {
+        if (r.cuisineType != null && r.cuisineType!.isNotEmpty) {
+          for (final type in r.cuisineType!.split(',')) {
+            final trimmed = type.trim();
+            if (trimmed.isNotEmpty) {
+              cuisineSet.add(trimmed);
+            }
+          }
+        }
+      }
+
+      final cuisines = cuisineSet.toList()..sort();
+      final categories = cuisines.asMap().entries.map((entry) {
+        return CuisineCategory(
+          id: 'cuisine_${entry.key}',
+          name: entry.value,
+          imageUrl: _cuisineImageFor(entry.value),
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _allRestaurants = restaurants;
+          _cuisineCategories = categories;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load restaurants. Pull down to retry.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Map cuisine type names to Unsplash images for the category circles
+  String _cuisineImageFor(String cuisine) {
+    final lower = cuisine.toLowerCase();
+    if (lower.contains('burger')) {
+      return 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('pizza') || lower.contains('italian')) {
+      return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('momo') || lower.contains('nepali')) {
+      return 'https://images.unsplash.com/photo-1626804475297-4160ebea14ee?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('dessert') || lower.contains('sweet')) {
+      return 'https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('juice') || lower.contains('drink')) {
+      return 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('indian')) {
+      return 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('continental') || lower.contains('grill') || lower.contains('steak')) {
+      return 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=200&q=80';
+    }
+    // Default food image
+    return 'https://images.unsplash.com/photo-1496116218417-1a781b1c416c?auto=format&fit=crop&w=200&q=80';
+  }
 
   void _addRecentSearch(String query) {
     if (query.trim().isEmpty) return;
@@ -95,13 +199,19 @@ class _SearchScreenState extends State<SearchScreen> {
   // ── Filtered restaurants logic ──
 
   List<Restaurant> get _filteredRestaurants {
-    var restaurants = mockRestaurants;
+    var restaurants = _allRestaurants;
 
     // Filter by selected cuisine category
     if (_selectedCategoryId != null) {
-      restaurants = restaurants.where((r) {
-        return r.foods.any((f) => f.categoryId == _selectedCategoryId);
-      }).toList();
+      final selectedName = _cuisineCategories
+          .where((c) => c.id == _selectedCategoryId)
+          .map((c) => c.name.toLowerCase())
+          .firstOrNull;
+      if (selectedName != null) {
+        restaurants = restaurants.where((r) {
+          return r.cuisineType?.toLowerCase().contains(selectedName) ?? false;
+        }).toList();
+      }
     }
 
     // Filter by search query
@@ -109,30 +219,23 @@ class _SearchScreenState extends State<SearchScreen> {
       final query = _searchQuery.toLowerCase();
       restaurants = restaurants.where((r) {
         if (r.name.toLowerCase().contains(query)) return true;
-        if (r.foods.any((f) => f.name.toLowerCase().contains(query))) {
-          return true;
-        }
+        if (r.cuisineType?.toLowerCase().contains(query) ?? false) return true;
+        if (r.description.toLowerCase().contains(query)) return true;
         return false;
       }).toList();
     }
 
-    // ── Apply advanced filters ──
-
-    // Filter by minimum rating
+    // Apply advanced filters
     if (_filters.minRating != null) {
       restaurants = restaurants.where((r) {
         return r.rating >= _filters.minRating!;
       }).toList();
     }
 
-    // Filter by delivery price
     if (_filters.deliveryPrice != null) {
-      // Note: mock data doesn't have delivery price, so we simulate it.
-      // In a real app, this would check actual delivery fees.
       restaurants = restaurants.where((r) {
         switch (_filters.deliveryPrice!) {
           case DeliveryPriceOption.free:
-            // Restaurants with higher ratings simulate free delivery
             return r.rating >= 4.5;
           case DeliveryPriceOption.under50:
             return r.rating >= 4.0;
@@ -142,7 +245,6 @@ class _SearchScreenState extends State<SearchScreen> {
       }).toList();
     }
 
-    // Filter by delivery time
     if (_filters.deliveryTime != null) {
       restaurants = restaurants.where((r) {
         switch (_filters.deliveryTime!) {
@@ -180,6 +282,74 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: Color(0xFFF5222D)),
+                const SizedBox(height: 16),
+                Text(
+                  'Loading restaurants...',
+                  style: TextStyle(color: const Color(0xFF8C8C8C), fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _fetchRestaurants,
+            color: const Color(0xFFF5222D),
+            child: ListView(
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_rounded,
+                            size: 48, color: Color(0xFFD9D9D9)),
+                        const SizedBox(height: 16),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF8C8C8C),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _fetchRestaurants,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Retry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF5222D),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final filteredRestaurants = _filteredRestaurants;
     final hasActiveSearch = _searchQuery.isNotEmpty || _selectedCategoryId != null;
     final showEmptyResults = hasActiveSearch && filteredRestaurants.isEmpty;
@@ -203,18 +373,23 @@ class _SearchScreenState extends State<SearchScreen> {
             Expanded(
               child: showEmptyResults
                   ? _buildEmptyResults()
-                  : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Popular Cuisines (only show when no active text search) ──
-                          if (_searchQuery.isEmpty)
-                            _buildPopularCuisinesSection(context),
+                  : RefreshIndicator(
+                      onRefresh: _fetchRestaurants,
+                      color: const Color(0xFFF5222D),
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Popular Cuisines (only show when no active text search) ──
+                            if (_searchQuery.isEmpty)
+                              _buildPopularCuisinesSection(context),
 
-                          // ── Restaurants Near You ──
-                          _buildRestaurantsSection(context, filteredRestaurants),
-                          const SizedBox(height: 24),
-                        ],
+                            // ── Restaurants Near You ──
+                            _buildRestaurantsSection(context, filteredRestaurants),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
                     ),
             ),
@@ -236,7 +411,6 @@ class _SearchScreenState extends State<SearchScreen> {
     final lowerText = text.toLowerCase();
     final lowerQuery = query.toLowerCase();
 
-    // Find all match positions
     final matches = <int>[];
     int start = 0;
     while (true) {
@@ -254,11 +428,9 @@ class _SearchScreenState extends State<SearchScreen> {
     int lastEnd = 0;
 
     for (final match in matches) {
-      // Text before match
       if (match > lastEnd) {
         spans.add(TextSpan(text: text.substring(lastEnd, match)));
       }
-      // Highlighted match
       spans.add(TextSpan(
         text: text.substring(match, match + lowerQuery.length),
         style: const TextStyle(
@@ -270,7 +442,6 @@ class _SearchScreenState extends State<SearchScreen> {
       lastEnd = match + lowerQuery.length;
     }
 
-    // Remaining text after last match
     if (lastEnd < text.length) {
       spans.add(TextSpan(text: text.substring(lastEnd)));
     }
@@ -464,7 +635,6 @@ class _SearchScreenState extends State<SearchScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          // Search text field
           Expanded(
             child: TextField(
               controller: _searchController,
@@ -537,7 +707,6 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // Filter icon button
           GestureDetector(
             onTap: () => _showFilterSheet(context),
             child: Container(
@@ -564,7 +733,6 @@ class _SearchScreenState extends State<SearchScreen> {
                       color: Color(0xFF333333),
                     ),
                   ),
-                  // Active filter badge
                   if (_activeFilterCount > 0)
                     Positioned(
                       right: -4,
@@ -602,7 +770,6 @@ class _SearchScreenState extends State<SearchScreen> {
   // ──────────────────────────────────────────────
 
   void _showFilterSheet(BuildContext context) {
-    // Clone current filters so changes are only applied on "Apply Filters"
     SearchFilters pendingFilters = _filters;
 
     showModalBottomSheet(
@@ -620,7 +787,6 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               child: Column(
                 children: [
-                  // ── Filters Header ──
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 11.5),
@@ -643,7 +809,6 @@ class _SearchScreenState extends State<SearchScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Active count badge
                             Container(
                               width: 20,
                               height: 20,
@@ -663,7 +828,6 @@ class _SearchScreenState extends State<SearchScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Close button (rotated chevron)
                             GestureDetector(
                               onTap: () => Navigator.pop(context),
                               child: Transform.rotate(
@@ -681,14 +845,12 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ),
 
-                  // ── Filter Content ──
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 19, 24, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // ── Restaurant Rating ──
                           _buildFilterSection(
                             title: 'Restaurant Rating',
                             child: Column(
@@ -701,7 +863,6 @@ class _SearchScreenState extends State<SearchScreen> {
                                       onChanged: (value) {
                                         setSheetState(() {
                                           if (value == (pendingFilters.minRating ?? 0)) {
-                                            // Toggle off - clear filter
                                             pendingFilters = pendingFilters.copyWith(
                                               minRating: null,
                                               clearRating: true,
@@ -762,7 +923,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
                           const SizedBox(height: 23),
 
-                          // ── Delivery Price ──
                           _buildFilterSection(
                             title: 'Delivery Price',
                             child: Row(
@@ -788,7 +948,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 _buildFilterChip(
-                                  label: 'Under  रु50',
+                                  label: 'Under रु50',
                                   isSelected: pendingFilters.deliveryPrice ==
                                       DeliveryPriceOption.under50,
                                   onTap: () {
@@ -808,7 +968,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 _buildFilterChip(
-                                  label: 'Under  रु100',
+                                  label: 'Under रु100',
                                   isSelected: pendingFilters.deliveryPrice ==
                                       DeliveryPriceOption.under100,
                                   onTap: () {
@@ -832,7 +992,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
                           const SizedBox(height: 23),
 
-                          // ── Delivery Time ──
                           _buildFilterSection(
                             title: 'Delivery Time',
                             child: Row(
@@ -903,7 +1062,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
                           const SizedBox(height: 23),
 
-                          // ── Apply Filters Button ──
                           GestureDetector(
                             onTap: () {
                               setState(() => _filters = pendingFilters);
@@ -997,7 +1155,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   // ──────────────────────────────────────────────
-  // Interactive Star Rating (with half-star support)
+  // Interactive Star Rating
   // ──────────────────────────────────────────────
 
   Widget _buildInteractiveStarRating({
@@ -1028,9 +1186,6 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.only(right: 4),
           child: GestureDetector(
             onTapDown: (details) {
-              // localPosition is relative to the SizedBox (28x28)
-              // Left half = tap star left edge = half rating
-              // Right half = tap star right edge = full rating
               final isLeftHalf = details.localPosition.dx < 14;
               final newRating = isLeftHalf ? starNumber - 0.5 : starNumber.toDouble();
               onChanged(newRating);
@@ -1051,15 +1206,6 @@ class _SearchScreenState extends State<SearchScreen> {
   // ──────────────────────────────────────────────
 
   Widget _buildPopularCuisinesSection(BuildContext context) {
-    // Map category emoji icons to real image URLs
-    final cuisineImages = <String, String>{
-      'c1': 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=200&q=80',
-      'c2': 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=200&q=80',
-      'c3': 'https://images.unsplash.com/photo-1496116218417-1a781b1c416c?auto=format&fit=crop&w=200&q=80',
-      'c4': 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=200&q=80',
-      'c5': 'https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=200&q=80',
-    };
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1100,23 +1246,25 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         SizedBox(
           height: 130,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: mockCategories.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 13),
-            itemBuilder: (context, index) {
-              final category = mockCategories[index];
-              final isSelected = _selectedCategoryId == category.id;
-              return _buildCuisineItem(category, cuisineImages[category.id], isSelected);
-            },
-          ),
+          child: _cuisineCategories.isNotEmpty
+              ? ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _cuisineCategories.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 13),
+                  itemBuilder: (context, index) {
+                    final category = _cuisineCategories[index];
+                    final isSelected = _selectedCategoryId == category.id;
+                    return _buildCuisineItem(category, isSelected);
+                  },
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
   }
 
-  Widget _buildCuisineItem(Category category, String? imageUrl, bool isSelected) {
+  Widget _buildCuisineItem(CuisineCategory category, bool isSelected) {
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -1148,28 +1296,27 @@ class _SearchScreenState extends State<SearchScreen> {
                 mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Circular image
                   Container(
                     width: 70,
                     height: 70,
                     decoration: ShapeDecoration(
-                      image: imageUrl != null
+                      image: category.imageUrl.isNotEmpty
                           ? DecorationImage(
-                              image: NetworkImage(imageUrl),
+                              image: NetworkImage(category.imageUrl),
                               fit: BoxFit.cover,
                             )
                           : null,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(9999),
                       ),
-                      color: imageUrl == null
+                      color: category.imageUrl.isEmpty
                           ? const Color(0xFFF0F0F0)
                           : null,
                     ),
-                    child: imageUrl == null
+                    child: category.imageUrl.isEmpty
                         ? Center(
                             child: Text(
-                              category.imageUrl, // emoji fallback
+                              '🍽',
                               style: const TextStyle(fontSize: 28),
                             ),
                           )
@@ -1183,6 +1330,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -1205,7 +1354,6 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -1233,14 +1381,13 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Active filter chips summary            if (_filters.hasActiveFilters)
+          if (_filters.hasActiveFilters)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    // Clear all
                     GestureDetector(
                       onTap: () => setState(() => _filters = const SearchFilters()),
                       child: Container(
@@ -1273,7 +1420,6 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Show active filter chips
                     if (_filters.minRating != null)
                       _buildActiveFilterChip(
                         label: '${_filters.minRating!}+ Rating',
@@ -1299,7 +1445,6 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
-          // Restaurant list
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -1404,7 +1549,6 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Restaurant image
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
@@ -1425,12 +1569,10 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // Details
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Name row
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1467,7 +1609,6 @@ class _SearchScreenState extends State<SearchScreen> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  // Rating, time, status
                   Row(
                     children: [
                       const Icon(Icons.star, size: 14, color: Color(0xFFFFC107)),
@@ -1508,31 +1649,23 @@ class _SearchScreenState extends State<SearchScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Text(
-                        'Open 9 AM - 11 PM',
+                      Text(
+                        restaurant.isAcceptingOrders ? 'Open Now' : 'Closed',
                         style: TextStyle(
-                          color: Color(0xFF666666),
+                          color: restaurant.isAcceptingOrders
+                              ? const Color(0xFF52C41A)
+                              : const Color(0xFF8C8C8C),
                           fontSize: 13,
-                          fontWeight: FontWeight.w400,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  // Food types chips
-                  Row(
-                    children: restaurant.foods
-                        .map((f) => f.categoryId)
-                        .toSet()
-                        .take(3)
-                        .map((catId) {
-                      final category = mockCategories.firstWhere(
-                        (c) => c.id == catId,
-                        orElse: () => Category(id: '', name: '', imageUrl: ''),
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: Container(
+                  if (restaurant.cuisineType != null && restaurant.cuisineType!.isNotEmpty)
+                    Row(
+                      children: [
+                        Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 3,
@@ -1544,7 +1677,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             ),
                           ),
                           child: Text(
-                            category.name.isNotEmpty ? category.name : 'Food',
+                            restaurant.cuisineType!.split(',').first.trim(),
                             style: const TextStyle(
                               color: Color(0xFF8C8C8C),
                               fontSize: 11,
@@ -1552,9 +1685,8 @@ class _SearchScreenState extends State<SearchScreen> {
                             ),
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -1597,7 +1729,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Try searching for a different\\nrestaurant or food item',
+            'Try searching for a different\nrestaurant or food item',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Color(0xFFBFBFBF),
@@ -1610,5 +1742,3 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 }
-
-

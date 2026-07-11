@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/models.dart';
 import '../../cart_provider.dart';
 import '../../state_providers.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
 import 'cart_screen.dart';
 import 'food_details_screen.dart';
 
@@ -16,6 +18,37 @@ class RestaurantMenuScreen extends ConsumerStatefulWidget {
 }
 
 class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
+  List<Food> _foods = [];
+  bool _isLoadingMenu = true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.restaurant.foods.isNotEmpty) {
+      _foods = widget.restaurant.foods;
+      _isLoadingMenu = false;
+    } else {
+      _fetchMenu();
+    }
+  }
+
+  Future<void> _fetchMenu() async {
+    try {
+      final api = di.sl<ApiService>();
+      final raw = await api.getRestaurantMenu(widget.restaurant.id);
+      if (mounted) {
+        setState(() {
+          _foods = raw.map((item) => Food.fromJson(item)).toList();
+          _isLoadingMenu = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMenu = false);
+      }
+    }
+  }
+
   // ── Derived from CartProvider (shared state) ──
   // Returns cart items belonging to this restaurant
   Iterable<CartItem> get _restaurantCartItems {
@@ -394,7 +427,12 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          ...widget.restaurant.foods.map((food) => _buildFoodItem(food)),
+          if (_isLoadingMenu)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator(color: Color(0xFFF5222D))),
+            )
+          else ..._foods.map((food) => _buildFoodItem(food)),
         ],
       ),
     );
