@@ -3,8 +3,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:convex_bottom_bar/convex_bottom_bar.dart';
 import '../providers/auth_provider.dart';
-import '../providers/call_provider.dart';
-import '../screens/call/incoming_call_screen.dart';
 import '../screens/user/home_screen.dart';
 import '../screens/user/search_screen.dart';
 import '../screens/user/cart_screen.dart';
@@ -47,8 +45,6 @@ class _NavBarStyle extends StyleHook {
 
 class _AppNavigationState extends State<AppNavigation> {
   int _currentIndex = 0;
-  bool _isShowingIncomingCall = false;
-
   /// Shared cart icon widget used in the nav bar (inactive state).
   static final Widget _cartIcon = SvgPicture.asset(
     'assets/icons/cart.svg',
@@ -373,22 +369,6 @@ class _AppNavigationState extends State<AppNavigation> {
     // Clamp index when role switch changes screen count
     if (_currentIndex >= _currentScreens.length) {
       _currentIndex = 0;
-    }
-
-    // Auto-navigate to incoming call screen
-    final incomingCall = context.watch<CallProvider>().incomingCall;
-    if (incomingCall != null && !_isShowingIncomingCall) {
-      _isShowingIncomingCall = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => IncomingCallScreen(call: incomingCall),
-          ),
-        ).then((_) {
-          _isShowingIncomingCall = false;
-        });
-      });
     }
 
     return Scaffold(

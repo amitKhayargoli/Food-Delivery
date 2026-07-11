@@ -20,8 +20,11 @@ class SupabaseConfig {
   );
 
   /// Backend API base URL — set via --dart-define=BACKEND_URL=...
-  /// Default is localhost:5000 (same machine). For Waydroid with emulated
-  /// NAT, change to 10.0.2.2:5000.
+  ///
+  /// Default: http://localhost:5000/api
+  ///   - Android emulator → run `adb reverse tcp:5000 tcp:5000` first, localhost works
+  ///   - Physical device via hotspot → pass `--dart-define=BACKEND_URL=http://<laptop-ip>:5000/api`
+  ///   - Emulator without adb reverse → pass `--dart-define=BACKEND_URL=http://10.0.2.2:5000/api`
   static const String backendUrl = String.fromEnvironment(
     'BACKEND_URL',
     defaultValue: 'http://localhost:5000/api',

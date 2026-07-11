@@ -133,6 +133,8 @@ class Order {
   final String? deliveryBoyId;
   final String? deliveryBoyName;
   final String? deliveryBoyAvatarUrl;
+  final String? deliveryBoyPhone;
+  final String? customerPhone;
   final DateTime? assignedAt;
   final DateTime? acceptedAt;
   final DateTime? preparingAt;
@@ -164,6 +166,8 @@ class Order {
     this.deliveryBoyId,
     this.deliveryBoyName,
     this.deliveryBoyAvatarUrl,
+    this.deliveryBoyPhone,
+    this.customerPhone,
     this.assignedAt,
     this.acceptedAt,
     this.preparingAt,
@@ -214,6 +218,10 @@ class Order {
           json['deliveryBoyName'] as String?,
       deliveryBoyAvatarUrl: json['delivery_boy_avatar_url'] as String? ??
           json['deliveryBoyAvatarUrl'] as String?,
+      deliveryBoyPhone: json['delivery_boy_phone'] as String? ??
+          json['deliveryBoyPhone'] as String?,
+      customerPhone: json['customer_phone'] as String? ??
+          json['customerPhone'] as String?,
       assignedAt: _parseDateTime(
           json['assigned_at'] as String? ?? json['assignedAt'] as String?),
       acceptedAt: _parseDateTime(

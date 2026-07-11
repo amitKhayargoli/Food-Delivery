@@ -63,6 +63,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         phone,
         password_hash,
         role: 'CUSTOMER',
+        roles: ['CUSTOMER'],
       }, { onConflict: 'id' })
       .select('id, username, email, role, roles')
       .single();
@@ -330,6 +331,8 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
         email,
         phone: tempPhone,
         username: tempUsername,
+        role: 'CUSTOMER',
+        roles: ['CUSTOMER'],
       }, { onConflict: 'id' })
       .select()
       .single();
@@ -409,7 +412,8 @@ export const completeProfile = async (req: Request, res: Response): Promise<void
       // If this user already has a real profile (non-TEMP phone), they don't
       // need to complete it again — return a proper JWT.
       if (user.phone && !user.phone.startsWith('TEMP_')) {
-        const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        const roles = user.roles || [user.role];
+        const token = jwt.sign({ id: user.id, role: user.role, roles }, JWT_SECRET, { expiresIn: '1d' });
         res.status(200).json({
           message: 'Profile already completed',
           token,
@@ -817,6 +821,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
           email: `${phone}@placeholder.local`,
           phone,
           role: 'CUSTOMER',
+          roles: ['CUSTOMER'],
         }, { onConflict: 'id' })
         .select('*')
         .single();

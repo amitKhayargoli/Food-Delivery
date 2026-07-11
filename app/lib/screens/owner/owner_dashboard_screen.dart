@@ -178,10 +178,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     const double avgSpeedKmh = 20.0;
     const double R = 6371;
 
-    final double dLat = _deg2rad(_restaurantLat! - riderLoc.latitude);
-    final double dLon = _deg2rad(_restaurantLng! - riderLoc.longitude);
-    final double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(riderLoc.latitude) * cos(_restaurantLat!) * sin(dLon / 2) * sin(dLon / 2);
+    // Convert all lat/lng to radians before trig functions
+    final double lat1Rad = _deg2rad(riderLoc.latitude);
+    final double lat2Rad = _deg2rad(_restaurantLat!);
+    final double lng1Rad = _deg2rad(riderLoc.longitude);
+    final double lng2Rad = _deg2rad(_restaurantLng!);
+    final double dLat = lat2Rad - lat1Rad;
+    final double dLon = lng2Rad - lng1Rad;
+
+    // Haversine formula — clamp `a` to [0, 1] to prevent NaN from
+    // floating-point rounding when coordinates are nearly identical.
+    final double a = (sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2))
+        .clamp(0.0, 1.0);
     final double c = 2 * asin(sqrt(a));
     final int minutes = ((R * c) / avgSpeedKmh * 60).round();
     return minutes < 1 ? 1 : minutes;

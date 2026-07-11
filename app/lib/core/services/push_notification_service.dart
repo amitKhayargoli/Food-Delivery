@@ -6,8 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../firebase_options.dart';
 import '../../injection_container.dart' as di;
-import '../../providers/call_provider.dart';
-import '../../models/call.dart';
 import '../../models/order.dart';
 import '../services/api_service.dart';
 import '../../screens/user/order_detail_screen.dart';
@@ -102,11 +100,6 @@ class PushNotificationService {
     final data = message.data;
     final type = data['type'] as String?;
 
-    if (type == 'incoming_call') {
-      _handleIncomingCallPayload(data);
-      return;
-    }
-
     // Navigate to the relevant screen based on notification type
     _navigateToDeepLink(data);
 
@@ -147,11 +140,6 @@ class PushNotificationService {
     final data = message.data;
     final type = data['type'] as String?;
 
-    if (type == 'incoming_call') {
-      _handleIncomingCallPayload(data);
-      return;
-    }
-
     _navigateToDeepLink(data);
   }
 
@@ -165,53 +153,9 @@ class PushNotificationService {
       final data = message.data;
       final type = data['type'] as String?;
 
-      if (type == 'incoming_call') {
-        _handleIncomingCallPayload(data);
-        return;
-      }
-
       _navigateToDeepLink(data);
     } catch (e) {
       debugPrint('[PushNotification] getInitialMessage error: $e');
-    }
-  }
-
-  /// Process an incoming call data payload from FCM.
-  /// Parses the call info and triggers the incoming call UI via CallProvider.
-  void _handleIncomingCallPayload(Map<String, dynamic> data) {
-    try {
-      final callId = data['call_id'] as String?;
-      final callerId = data['caller_id'] as String?;
-      final callerName = data['caller_name'] as String? ?? 'Caller';
-      final channelName = data['channel_name'] as String?;
-
-      if (callId == null || callerId == null || channelName == null) return;
-
-      debugPrint('[PushNotification] 📞 Incoming call from $callerName ($callerId)');
-
-      // Create a Call object and push it to CallProvider
-      // The AppNavigation widget watches CallProvider and will auto-navigate
-      // to IncomingCallScreen.
-      final navigatorKey = di.sl<GlobalKey<NavigatorState>>();
-      final context = navigatorKey.currentContext;
-      if (context == null) return;
-
-      final callProvider = context.read<CallProvider>();
-      final incomingCall = Call(
-        id: callId,
-        callerId: callerId,
-        calleeId: '', // We'll get this from the DB sync
-        orderId: data['order_id'] as String?,
-        status: CallStatus.calling,
-        channelName: channelName,
-        createdAt: DateTime.now(),
-        callerName: callerName,
-        callerRole: data['caller_role'] as String?,
-      );
-
-      callProvider.service.triggerIncomingCall(incomingCall);
-    } catch (e) {
-      debugPrint('[PushNotification] Incoming call handling error: $e');
     }
   }
 
@@ -315,10 +259,5 @@ class PushNotificationService {
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
   final data = message.data;
-  if (data['type'] == 'incoming_call') {
-    // For background handling, we rely on the system notification
-    // that was already shown by the FCM server. When the user taps it,
-    // onMessageOpenedApp or getInitialMessage will handle navigation.
-    debugPrint('[PushNotification][BG] Incoming call notification received');
-  }
+  debugPrint('[PushNotification][BG] Background notification received');
 }

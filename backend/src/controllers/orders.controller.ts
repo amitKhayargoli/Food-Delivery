@@ -31,16 +31,16 @@ async function getRestaurantNames(restaurantIds: string[]): Promise<Map<string, 
 }
 
 /**
- * Batch-fetch delivery boy info (username + avatar_url) for a set
+ * Batch-fetch delivery boy info (username + avatar_url + phone) for a set
  * of user IDs from the users table and return a Map<id, info>.
  */
-async function getRiderInfo(riderIds: string[]): Promise<Map<string, { username: string; avatar_url: string | null }>> {
+async function getRiderInfo(riderIds: string[]): Promise<Map<string, { username: string; avatar_url: string | null; phone: string | null }>> {
   const uniqueIds = [...new Set(riderIds.filter(Boolean))];
   if (uniqueIds.length === 0) return new Map();
 
   const { data: users, error } = await supabase.admin
     .from('users')
-    .select('id, username, avatar_url')
+    .select('id, username, avatar_url, phone')
     .in('id', uniqueIds);
 
   if (error || !users) {
@@ -48,11 +48,12 @@ async function getRiderInfo(riderIds: string[]): Promise<Map<string, { username:
     return new Map();
   }
 
-  const map = new Map<string, { username: string; avatar_url: string | null }>();
+  const map = new Map<string, { username: string; avatar_url: string | null; phone: string | null }>();
   for (const u of users) {
     map.set(u.id, {
       username: u.username || 'Rider',
       avatar_url: u.avatar_url || null,
+      phone: u.phone || null,
     });
   }
   return map;
@@ -67,6 +68,34 @@ async function getRiderNames(riderIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const [id, info] of infoMap) {
     map.set(id, info.username);
+  }
+  return map;
+}
+
+/**
+ * Batch-fetch customer info (username + phone) for a set of user IDs
+ * from the users table and return a Map<id, info>.
+ */
+async function getCustomerInfo(customerIds: string[]): Promise<Map<string, { username: string; phone: string | null }>> {
+  const uniqueIds = [...new Set(customerIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+
+  const { data: users, error } = await supabase.admin
+    .from('users')
+    .select('id, username, phone')
+    .in('id', uniqueIds);
+
+  if (error || !users) {
+    console.error('Fetch customer info error:', error);
+    return new Map();
+  }
+
+  const map = new Map<string, { username: string; phone: string | null }>();
+  for (const u of users) {
+    map.set(u.id, {
+      username: u.username || 'Customer',
+      phone: u.phone || null,
+    });
   }
   return map;
 }
@@ -180,6 +209,37 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       .select('*')
       .eq('order_id', order.id);
 
+    // ── Notify restaurant owner: "New order received!" ──
+    // Fire-and-forget — don't block the response
+    (async () => {
+      try {
+        const { data: app } = await supabase.admin
+          .from('restaurant_applications')
+          .select('user_id, restaurant_name')
+          .eq('id', restaurant_id)
+          .maybeSingle();
+
+        if (app?.user_id) {
+          // Fetch customer name for the notification body
+          const { data: customer } = await supabase.admin
+            .from('users')
+            .select('username')
+            .eq('id', userId)
+            .maybeSingle();
+
+          const customerName = customer?.username || 'A customer';
+
+          notifyUser(app.user_id, supabase.admin, {
+            title: 'New Order Received! 🆕',
+            body: `${customerName} placed a new order (${orderNumber}). Check your dashboard!`,
+            data: { type: 'order_update', order_id: order.id, status: 'CREATED' },
+          });
+        }
+      } catch (notifError) {
+        console.error('[FCM] New-order notification failed:', notifError);
+      }
+    })();
+
     res.status(201).json({
       message: 'Order created successfully.',
       order: {
@@ -260,7 +320,7 @@ export const getRestaurantOrders = async (req: Request, res: Response): Promise<
       .filter(Boolean) as string[];
     const riderInfo = await getRiderInfo(riderIds);
 
-    // Attach items, restaurant_name, and delivery_boy info to each order
+    // Attach items, restaurant_name, and delivery_boy info (incl. phone) to each order
     const ordersWithDetails = orders.map((order: any) => {
       const info = riderInfo.get(order.delivery_boy_id);
       return {
@@ -271,6 +331,7 @@ export const getRestaurantOrders = async (req: Request, res: Response): Promise<
         restaurant_name: restaurantNames.get(order.restaurant_id) || '',
         delivery_boy_name: info?.username || null,
         delivery_boy_avatar_url: info?.avatar_url || null,
+        delivery_boy_phone: info?.phone || null,
       };
     });
 
@@ -326,14 +387,16 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
     const names = await getRestaurantNames([order.restaurant_id]);
     const restaurantName = names.get(order.restaurant_id) || '';
 
-    // Fetch rider info if assigned
+    // Fetch rider info (includes phone) if assigned
     let deliveryBoyName: string | null = null;
     let deliveryBoyAvatarUrl: string | null = null;
+    let deliveryBoyPhone: string | null = null;
     if (order.delivery_boy_id) {
       const riderInfoMap = await getRiderInfo([order.delivery_boy_id]);
       const info = riderInfoMap.get(order.delivery_boy_id);
       deliveryBoyName = info?.username || null;
       deliveryBoyAvatarUrl = info?.avatar_url || null;
+      deliveryBoyPhone = info?.phone || null;
     }
 
     res.status(200).json({
@@ -343,6 +406,7 @@ export const getOrderById = async (req: Request, res: Response): Promise<void> =
         restaurant_name: restaurantName,
         delivery_boy_name: deliveryBoyName,
         delivery_boy_avatar_url: deliveryBoyAvatarUrl,
+        delivery_boy_phone: deliveryBoyPhone,
       },
     });
   } catch (error) {
@@ -416,6 +480,17 @@ export const acceptOrder = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // ── Notify customer: "Your order has been accepted!" ──
+    if (updated?.user_id) {
+      notifyUser(updated.user_id, supabase.admin, {
+        title: 'Order Accepted! ✅',
+        body: 'Your order has been accepted by the restaurant and is being prepared.',
+        data: { type: 'order_update', order_id: id, status: 'ACCEPTED' },
+      }).catch((err: any) =>
+        console.error('[FCM] Accepted notification failed:', err?.message),
+      );
+    }
+
     res.status(200).json({
       message: 'Order accepted successfully.',
       order: updated,
@@ -486,6 +561,19 @@ export const rejectOrder = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // ── Notify customer: "Your order has been rejected" ──
+    if (updated?.user_id) {
+      notifyUser(updated.user_id, supabase.admin, {
+        title: 'Order Rejected ❌',
+        body: reason
+          ? `The restaurant could not accept your order: ${reason}`
+          : 'The restaurant could not accept your order.',
+        data: { type: 'order_update', order_id: id, status: 'CANCELLED' },
+      }).catch((err: any) =>
+        console.error('[FCM] Rejection notification failed:', err?.message),
+      );
+    }
+
     res.status(200).json({
       message: 'Order rejected.',
       order: updated,
@@ -539,6 +627,17 @@ export const markAsPreparing = async (req: Request, res: Response): Promise<void
     if (error || !updated) {
       res.status(404).json({ error: 'Order not found or cannot be marked as preparing.' });
       return;
+    }
+
+    // ── Notify customer: "Your order is being prepared!" ──
+    if (updated?.user_id) {
+      notifyUser(updated.user_id, supabase.admin, {
+        title: 'Preparing Your Order 🍳',
+        body: 'The restaurant is now preparing your order!',
+        data: { type: 'order_update', order_id: id, status: 'PREPARING' },
+      }).catch((err: any) =>
+        console.error('[FCM] Preparing notification failed:', err?.message),
+      );
     }
 
     res.status(200).json({
@@ -612,6 +711,17 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
       });
     }
 
+    // ── Notify customer: "Your order is ready for delivery!" ──
+    if (updated?.user_id) {
+      notifyUser(updated.user_id, supabase.admin, {
+        title: 'Order Out for Delivery 🛵',
+        body: 'Your order is on its way! A rider will be picking it up shortly.',
+        data: { type: 'order_update', order_id: id, status: 'OUT_FOR_DELIVERY' },
+      }).catch((err: any) =>
+        console.error('[FCM] Ready notification failed:', err?.message),
+      );
+    }
+
     res.status(200).json({
       message: 'Order is ready!',
       order: updated,
@@ -666,15 +776,22 @@ export const getMyOrders = async (req: Request, res: Response): Promise<void> =>
     const restaurantIds = orders.map((o: any) => o.restaurant_id);
     const restaurantNames = await getRestaurantNames(restaurantIds);
 
-    // Batch-fetch rider info
+    // Batch-fetch rider info (includes phone)
     const riderIds = orders
       .map((o: any) => o.delivery_boy_id)
       .filter(Boolean) as string[];
     const riderInfo = await getRiderInfo(riderIds);
 
-    // Attach items, restaurant_name, and delivery_boy info to each order
+    // Batch-fetch customer info (for delivery boy to call customer)
+    const customerIds = orders
+      .map((o: any) => o.user_id)
+      .filter(Boolean) as string[];
+    const customerInfo = await getCustomerInfo(customerIds);
+
+    // Attach items, restaurant_name, delivery_boy info, and customer info
     const ordersWithDetails = orders.map((order: any) => {
       const info = riderInfo.get(order.delivery_boy_id);
+      const cust = customerInfo.get(order.user_id);
       return {
         ...order,
         items: (allItems || []).filter(
@@ -683,6 +800,9 @@ export const getMyOrders = async (req: Request, res: Response): Promise<void> =>
         restaurant_name: restaurantNames.get(order.restaurant_id) || '',
         delivery_boy_name: info?.username || null,
         delivery_boy_avatar_url: info?.avatar_url || null,
+        delivery_boy_phone: info?.phone || null,
+        customer_name: cust?.username || null,
+        customer_phone: cust?.phone || null,
       };
     });
 
@@ -777,13 +897,24 @@ export const getMyDeliveryJobs = async (req: Request, res: Response): Promise<vo
     const restaurantIds = orders.map((o: any) => o.restaurant_id);
     const restaurantNames = await getRestaurantNames(restaurantIds);
 
-    // Attach restaurant_name to each order
-    const ordersWithNames = orders.map((order: any) => ({
-      ...order,
-      restaurant_name: restaurantNames.get(order.restaurant_id) || '',
-    }));
+    // Fetch customer info (name + phone) so the delivery boy can call them
+    const customerIds = orders
+      .map((o: any) => o.user_id)
+      .filter(Boolean) as string[];
+    const customerInfo = await getCustomerInfo(customerIds);
 
-    res.status(200).json({ orders: ordersWithNames });
+    // Attach restaurant_name and customer info to each order
+    const ordersWithDetails = orders.map((order: any) => {
+      const cust = customerInfo.get(order.user_id);
+      return {
+        ...order,
+        restaurant_name: restaurantNames.get(order.restaurant_id) || '',
+        customer_name: cust?.username || null,
+        customer_phone: cust?.phone || null,
+      };
+    });
+
+    res.status(200).json({ orders: ordersWithDetails });
   } catch (error) {
     console.error('Get delivery jobs error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -917,6 +1048,29 @@ export const assignDeliveryBoy = async (req: Request, res: Response): Promise<vo
       res.status(404).json({ error: 'Order not found or cannot be assigned.' });
       return;
     }
+
+    // ── Notify customer: "A rider has been assigned!" ──
+    (async () => {
+      try {
+        const { data: riderData } = await supabase.admin
+          .from('users')
+          .select('username')
+          .eq('id', delivery_boy_id)
+          .maybeSingle();
+
+        const riderName = riderData?.username || 'A rider';
+
+        if (updated?.user_id) {
+          notifyUser(updated.user_id, supabase.admin, {
+            title: 'Rider Assigned! 🛵',
+            body: `${riderName} has been assigned to your order and is on the way!`,
+            data: { type: 'order_update', order_id: id, status: 'OUT_FOR_DELIVERY' },
+          });
+        }
+      } catch (notifError) {
+        console.error('[FCM] Assign delivery notification failed:', notifError);
+      }
+    })();
 
     res.status(200).json({
       message: 'Delivery boy assigned successfully.',
@@ -1455,7 +1609,7 @@ export const addRiderNote = async (req: Request, res: Response): Promise<void> =
     // Verify the delivery boy is assigned to this order
     const { data: order } = await supabase.admin
       .from('orders')
-      .select('id, delivery_boy_id')
+      .select('id, delivery_boy_id, user_id')
       .eq('id', id)
       .eq('delivery_boy_id', userId)
       .maybeSingle();
@@ -1479,6 +1633,17 @@ export const addRiderNote = async (req: Request, res: Response): Promise<void> =
       console.error('Add rider note error:', error);
       res.status(500).json({ error: 'Failed to add rider note.' });
       return;
+    }
+
+    // ── Notify customer: "Rider added a note!" ──
+    if (order?.user_id) {
+      notifyUser(order.user_id, supabase.admin, {
+        title: 'Message from Your Rider 💬',
+        body: rider_note.toString().trim(),
+        data: { type: 'order_update', order_id: id, status: 'NOTE' },
+      }).catch((err: any) =>
+        console.error('[FCM] Rider note notification failed:', err?.message),
+      );
     }
 
     res.status(200).json({

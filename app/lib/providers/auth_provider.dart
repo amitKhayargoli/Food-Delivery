@@ -9,7 +9,6 @@ import '../core/services/api_service.dart';
 import '../core/services/delivery_location_service.dart';
 import '../core/services/supabase_client_service.dart';
 import '../core/services/push_notification_service.dart';
-import '../core/services/call_service.dart';
 import '../core/config/supabase_config.dart';
 import '../injection_container.dart' as di;
 
@@ -147,26 +146,38 @@ class AuthProvider with ChangeNotifier {
 
         if (recordId != userId) return;
 
-        final latestRole = newRecord['role']?.toString() ?? 'USER';
-        final latestUsername = newRecord['username']?.toString() ?? 'User';
+        final latestRole = newRecord['role']?.toString();
+        final latestUsername = newRecord['username']?.toString();
         final latestRolesRaw = newRecord['roles'];
+
+        // --- Critical safeguard ---
+        // If the `roles` column is NOT present as a List in the Realtime
+        // payload (e.g. the database row has a NULL or mismatched roles
+        // array), we MUST NOT overwrite the in-memory roles. Doing so
+        // would lose roles like DELIVERY_BOY or RESTAURANT_OWNER and
+        // cause the app to fall back to a basic customer view.
+        //
+        // Preserve existing `_roles` in that case, falling back to the
+        // primary `role` only when even that is missing.
+        final resolvedRole = latestRole ?? _role ?? 'USER';
+        final resolvedUsername = latestUsername ?? _username ?? 'User';
         final List<String> latestRoles;
         if (latestRolesRaw is List) {
           latestRoles = latestRolesRaw.map((e) => e.toString()).toList();
         } else {
-          latestRoles = [latestRole];
+          latestRoles = List<String>.from(_roles);
         }
 
-        debugPrint('[RT] 📦 Realtime UPDATE — roles: $latestRoles, username: $latestUsername');
+        debugPrint('[RT] 📦 Realtime UPDATE — roles: $latestRoles, username: $resolvedUsername');
         debugPrint('[RT]   └─ stored roles: $_roles, username: $_username');
 
         // Only notify if something actually changed
-        if (_roles.toString() == latestRoles.toString() && _username == latestUsername) {
+        if (_roles.toString() == latestRoles.toString() && _username == resolvedUsername) {
           debugPrint('[RT]   └─ no change detected, skipping');
           return;
         }
 
-        _onRolesChanged(latestRoles, latestRole, latestUsername);
+        _onRolesChanged(latestRoles, resolvedRole, resolvedUsername);
       },
     );
 
@@ -288,7 +299,8 @@ class AuthProvider with ChangeNotifier {
         if (latestRolesRaw is List) {
           latestRoles = latestRolesRaw.map((e) => e.toString()).toList();
         } else {
-          latestRoles = [latestRole];
+          // Poll always selects 'roles' explicitly, but guard nonetheless
+          latestRoles = List<String>.from(_roles);
         }
 
         if (_roles.toString() != latestRoles.toString() || _username != latestUsername) {
@@ -403,7 +415,6 @@ class AuthProvider with ChangeNotifier {
           _startRoleSubscription(currentUser.id);
           _startPolling(currentUser.id);
 
-          di.sl<CallService>().init(userId: currentUser.id);
           if (_token != null) {
             di.sl<PushNotificationService>().init(authToken: _token!);
           }
@@ -475,10 +486,6 @@ class AuthProvider with ChangeNotifier {
       debugPrint('[RT] 🔌 Starting realtime subscription after login for user: $userId');
       _startRoleSubscription(userId);
       _startPolling(userId);
-    }
-
-    if (userId != null) {
-      di.sl<CallService>().init(userId: userId);
     }
 
     di.sl<PushNotificationService>().init(authToken: token);
@@ -616,7 +623,6 @@ class AuthProvider with ChangeNotifier {
     _pollTimer = null;
     _stopRoleSubscription();
 
-    di.sl<CallService>().dispose();
     di.sl<PushNotificationService>().dispose();
 
     _token = null;

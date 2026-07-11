@@ -14,8 +14,7 @@ import '../../widgets/rider_map_view.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
 import '../../providers/rider_notes_provider.dart';
-import '../../providers/call_provider.dart';
-import '../call/active_call_screen.dart';
+
 
 class DeliveryJobsScreen extends StatefulWidget {
   const DeliveryJobsScreen({super.key});
@@ -620,27 +619,29 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
     }
   }
 
-  // ── Call Customer ────────────────────────────
+  // ── Call Customer via Phone App ──────────────
 
   Future<void> _callCustomer(Order order) async {
-    if (order.userId.isEmpty) return;
+    final phone = order.customerPhone;
+    if (phone == null || phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Customer phone number not available'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
-    final provider = context.read<CallProvider>();
-    final result = await provider.startCall(
-      calleeId: order.userId,
-      orderId: order.id,
-    );
-
-    if (result.success && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ActiveCallScreen()),
-      );
-    } else if (result.error != null && mounted) {
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error!),
-          backgroundColor: Colors.red,
+        const SnackBar(
+          content: Text('Could not open phone app'),
           behavior: SnackBarBehavior.floating,
         ),
       );

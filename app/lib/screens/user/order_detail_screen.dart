@@ -3,14 +3,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
 import '../../widgets/rider_map_view.dart';
-import '../../providers/call_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../injection_container.dart' as di;
-import '../call/active_call_screen.dart';
 import '../full_screen_map_screen.dart';
 import 'support_conversation_list_screen.dart';
 import 'report_problem_screen.dart';
@@ -335,12 +334,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final double lat2 = _order.deliveryAddress!.latitude!;
     final double lon2 = _order.deliveryAddress!.longitude!;
 
+    // Convert all lat/lng to radians before trig functions
     const double R = 6371; // Earth radius in km
-    final double dLat = _deg2rad(lat2 - lat1);
-    final double dLon = _deg2rad(lon2 - lon1);
-    final double a =
-        sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+    final double lat1Rad = _deg2rad(lat1);
+    final double lon1Rad = _deg2rad(lon1);
+    final double lat2Rad = _deg2rad(lat2);
+    final double lon2Rad = _deg2rad(lon2);
+    final double dLat = lat2Rad - lat1Rad;
+    final double dLon = lon2Rad - lon1Rad;
+
+    // Haversine formula — clamp `a` to [0, 1] to prevent NaN from
+    // floating-point rounding when coordinates are nearly identical.
+    final double a = (sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2))
+        .clamp(0.0, 1.0);
     final double c = 2 * asin(sqrt(a));
     final double distanceKm = R * c;
 
@@ -350,7 +357,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return 'Rider is ${minutes ~/ 60} h ${minutes % 60} min away';
   }
 
-  double _deg2rad(double deg) => deg * (3.141592653589793 / 180.0);
+  double _deg2rad(double deg) => deg * (pi / 180.0);
 
   // ── Rating ───────────────────────────────────
 
@@ -854,34 +861,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  // ── Call Rider ───────────────────────────────
+  // ── Call Rider via Phone App ─────────────────
 
   Future<void> _callRider() async {
-    if (_order.deliveryBoyId == null) return;
+    final phone = _order.deliveryBoyPhone;
+    if (phone == null || phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rider phone number not available'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
-    final userId = context.read<AuthProvider>().token;
-    if (userId == null) return;
-
-    final provider = context.read<CallProvider>();
-    final result = await provider.startCall(
-      calleeId: _order.deliveryBoyId!,
-      orderId: _order.id,
-    );
-
-    if (!mounted) return;
-
-    if (result.success) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ActiveCallScreen()),
-      );
-    } else if (result.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error!),
-          backgroundColor: Colors.red,
-        ),
-      );
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open phone app'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
