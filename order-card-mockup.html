@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Card Redesign — Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #FAF9F9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+    gap: 32px;
+  }
+
+  h1 {
+    font-size: 20px;
+    color: #1A1C1C;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: #8E8E93;
+    margin-top: -16px;
+  }
+
+  .card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    justify-content: center;
+    max-width: 900px;
+  }
+
+  .variant-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #5C5C5C;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  /* ── The Card ────────────────────────── */
+  .order-card {
+    width: 380px;
+    background: #FFFFFF;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(27, 28, 28, 0.08);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* ── Header ──────────────────────────── */
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 16px 0 16px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.29;
+    letter-spacing: 0.01em;
+  }
+
+  .badge-new {
+    background: #FFFFFF;
+    color: #BB0018;
+    border: 1px solid #BB0018;
+  }
+
+  .badge-accepted {
+    background: #FFF1F0;
+    color: #BB0018;
+  }
+
+  .badge-preparing {
+    background: #FFF8E1;
+    color: #F9A825;
+  }
+
+  .badge-ready {
+    background: #E6F4EA;
+    color: #1E8E3E;
+  }
+
+  .badge-cancelled {
+    background: #EFEDED;
+    color: #5E3F3C;
+  }
+
+  .timestamp {
+    font-size: 12px;
+    color: #5C5C5C;
+    font-weight: 400;
+  }
+
+  /* ── Banner Image ─────────────────────── */
+  .banner-container {
+    position: relative;
+    margin: 12px 0 0 0;
+    width: 100%;
+    height: 150px;
+    overflow: hidden;
+  }
+
+  .banner-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .banner-gradient {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(transparent, rgba(0,0,0,0.15));
+    pointer-events: none;
+  }
+
+  /* ── Items Section ────────────────────── */
+  .items-section {
+    padding: 14px 16px 0 16px;
+  }
+
+  .item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  .item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1A1C1C;
+    line-height: 1.29;
+  }
+
+  .item-price {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1A1C1C;
+    line-height: 1.29;
+  }
+
+  .more-items {
+    font-size: 12px;
+    font-weight: 500;
+    color: #5C5C5C;
+    padding: 4px 0;
+  }
+
+  /* ── Divider ──────────────────────────── */
+  .section-divider {
+    height: 1px;
+    background: #F0F0F0;
+    margin: 12px 16px;
+  }
+
+  /* ── Total Row ────────────────────────── */
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+  }
+
+  .total-label {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1A1C1C;
+    line-height: 1.25;
+  }
+
+  .total-price {
+    font-size: 18px;
+    font-weight: 700;
+    color: #BB0018;
+    line-height: 1.25;
+  }
+
+  /* ── Delivery Address ─────────────────── */
+  .address-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px 0 16px;
+  }
+
+  .address-icon {
+    font-size: 14px;
+    color: #5C5C5C;
+    flex-shrink: 0;
+  }
+
+  .address-text {
+    font-size: 12px;
+    color: #5C5C5C;
+    font-weight: 400;
+    line-height: 1.38;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Action Buttons ───────────────────── */
+  .actions-section {
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .btn-secondary {
+    flex: 1;
+    height: 44px;
+    border: 1px solid #EFEDED;
+    border-radius: 8px;
+    background: white;
+    color: #5E3F3C;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-secondary:hover {
+    background: #FAF9F9;
+  }
+
+  .btn-primary {
+    flex: 2;
+    height: 44px;
+    border: none;
+    border-radius: 8px;
+    background: #BB0018;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-primary:hover {
+    background: #9E0014;
+  }
+
+  .btn-full {
+    flex: 1;
+    width: 100%;
+  }
+
+  /* ── Variant: No Image ────────────────── */
+  .order-card.no-image .banner-container {
+    display: none;
+  }
+
+  .order-card.no-image .items-section {
+    padding-top: 16px;
+  }
+
+  /* ── Annotation arrows ────────────────── */
+  .annotated {
+    position: relative;
+  }
+
+  .annotation {
+    position: absolute;
+    font-size: 10px;
+    font-weight: 600;
+    color: #BB0018;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .annotation-arrow {
+    position: absolute;
+    width: 1px;
+    background: #BB0018;
+    opacity: 0.4;
+  }
+
+  /* Tabs header at top of mockup */
+  .tabs-demo {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    justify-content: center;
+  }
+
+  .tab-chip {
+    padding: 6px 16px;
+    border-radius: 9999px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #5E3F3C;
+    background: #EFEDED;
+  }
+
+  .tab-chip.active {
+    background: #BB0018;
+    color: white;
+  }
+
+  /* ========== ANNOTATED VERSION ========== */
+  .mockup-layout {
+    position: relative;
+    margin: 20px 0;
+  }
+
+  .annotation-label {
+    position: absolute;
+    font-size: 9px;
+    font-weight: 700;
+    color: #BB0018;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .annotation-line {
+    position: absolute;
+    background: #BB0018;
+    opacity: 0.25;
+  }
+
+  .annotation-line-v {
+    width: 1px;
+  }
+
+  .annotation-line-h {
+    height: 1px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🔄 Order Card Redesign — Visual Mockup</h1>
+<p class="subtitle">Restaurant Owner Dashboard · Live Orders Page</p>
+
+<!-- Variant 1: With Image (New Tab) -->
+<div class="card-grid">
+  <div>
+    <div class="variant-label">→ Variant A: With Banner Image</div>
+    <div class="order-card" style="position:relative;">
+      <!-- Header -->
+      <div class="card-header">
+        <span class="badge badge-new">New</span>
+        <span class="timestamp">3m ago</span>
+      </div>
+
+      <!-- Full-width banner -->
+      <div class="banner-container">
+        <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=300&fit=crop" alt="Food" onerror="this.style.display='none'">
+        <div class="banner-gradient"></div>
+      </div>
+
+      <!-- Items -->
+      <div class="items-section">
+        <div class="item-row">
+          <span class="item-name">2x Butter Chicken</span>
+        </div>
+        <div class="item-row">
+          <span class="item-name">1x Garlic Naan</span>
+        </div>
+        <div class="more-items">+3 more items</div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <!-- Total -->
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 1250</span>
+      </div>
+
+      <!-- Address -->
+      <div class="address-row">
+        <span class="address-icon">📍</span>
+        <span class="address-text">123 Main Street, Andheri West, Mumbai</span>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions-section">
+        <button class="btn-secondary">Reject</button>
+        <button class="btn-primary">Accept Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 2: Without Image -->
+  <div>
+    <div class="variant-label">→ Variant B: No Image (Text Only)</div>
+    <div class="order-card no-image">
+      <!-- Header -->
+      <div class="card-header">
+        <span class="badge badge-preparing">Preparing</span>
+        <span class="timestamp">12m ago</span>
+      </div>
+
+      <!-- Items (no banner) -->
+      <div class="items-section">
+        <div class="item-row">
+          <span class="item-name">2x Paneer Tikka</span>
+        </div>
+        <div class="item-row">
+          <span class="item-name">1x Dal Makhani</span>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <!-- Total -->
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 780</span>
+      </div>
+
+      <!-- Address -->
+      <div class="address-row">
+        <span class="address-icon">📍</span>
+        <span class="address-text">456 Lake View, Powai</span>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions-section">
+        <button class="btn-primary btn-full" style="flex:1;">Mark as Ready</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 3: Ready Tab with Rider -->
+  <div>
+    <div class="variant-label">→ Variant C: Ready Tab (With Rider)</div>
+    <div class="order-card">
+      <!-- Header -->
+      <div class="card-header">
+        <span class="badge badge-ready">Ready</span>
+        <span class="timestamp">5m ago</span>
+      </div>
+
+      <!-- Banner -->
+      <div class="banner-container">
+        <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&h=300&fit=crop" alt="Pizza" onerror="this.style.display='none'">
+        <div class="banner-gradient"></div>
+      </div>
+
+      <!-- Items -->
+      <div class="items-section">
+        <div class="item-row">
+          <span class="item-name">1x Margherita Pizza</span>
+        </div>
+        <div class="item-row">
+          <span class="item-name">1x Pasta Alfredo</span>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <!-- Total -->
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 990</span>
+      </div>
+
+      <!-- Rider status (simplified for mockup) -->
+      <div style="margin: 12px 16px 0; padding: 10px 12px; background: #FFF1F0; border-radius: 8px; border: 0.5px solid #BB0018; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 20px;">🛵</span>
+        <span style="font-size: 14px; font-weight: 600; color: #1A1C1C; flex: 1;">Assigned to Rahul</span>
+        <span style="font-size: 12px; color: #5C5C5C;">~4 min away</span>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions-section">
+        <button class="btn-primary btn-full" style="flex:1;">Assign Delivery Boy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ANNOTATED LAYOUT ═══════════ -->
+<h2 style="margin-top: 20px; font-size: 16px; color: #1A1C1C;">📐 Annotated Layout Specs</h2>
+
+<div style="position: relative; margin: 20px auto; max-width: 380px;">
+  <div class="order-card" style="margin:0; position:relative;">
+    <div style="position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none; z-index:10;">
+
+      <!-- H1 - Header padding -->
+      <div style="position:absolute; top:0; left:0; right:0; height:16px; border-bottom:1px dashed rgba(187,0,24,0.2);"></div>
+
+      <!-- Header row area -->
+      <div style="position:absolute; top:16px; left:16px; right:16px; height:22px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; top:12px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">header row (badge + timestamp)</div>
+
+      <!-- Gap 12px -->
+      <div style="position:absolute; top:38px; left:4px; font-size:9px; color:#999;">12px gap</div>
+
+      <!-- Banner area 150px -->
+      <div style="position:absolute; top:50px; left:0; right:0; height:150px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; top:65px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">banner: 150px · full-width · boxfit:cover</div>
+
+      <!-- Gap 14px -->
+      <div style="position:absolute; top:200px; left:4px; font-size:9px; color:#999;">14px gap</div>
+
+      <!-- Items section -->
+      <div style="position:absolute; top:214px; left:16px; right:16px; height:56px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; top:216px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">items · max 2 · no per-item prices</div>
+
+      <!-- Divider gap -->
+      <div style="position:absolute; top:270px; left:4px; font-size:9px; color:#999;">divider at 16px margin</div>
+
+      <!-- Total row -->
+      <div style="position:absolute; top:284px; left:16px; right:16px; height:24px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; top:286px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">total row (label left · price right)</div>
+
+      <!-- Address gap + row -->
+      <div style="position:absolute; top:315px; left:4px; font-size:9px; color:#999;">8px gap</div>
+      <div style="position:absolute; top:324px; left:16px; right:16px; height:18px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; top:326px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">delivery address</div>
+
+      <!-- Action buttons area -->
+      <div style="position:absolute; bottom:16px; left:16px; right:16px; height:44px; border:1px dashed rgba(187,0,24,0.3); border-radius:2px;"></div>
+      <div style="position:absolute; bottom:60px; left:4px; font-size:9px; color:#999;">16px gap</div>
+      <div style="position:absolute; bottom:50px; left:4px; font-size:9px; font-weight:700; color:#BB0018; background:#FFF1F0; padding:1px 5px; border-radius:3px; letter-spacing:0.04em; text-transform:uppercase;">action buttons (unchanged logic)</div>
+    </div>
+
+    <!-- Actual card content behind annotations -->
+    <div style="opacity:0.15; filter:blur(0.5px);">
+      <div class="card-header">
+        <span class="badge badge-new">New</span>
+        <span class="timestamp">3m ago</span>
+      </div>
+      <div class="banner-container">
+        <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=300&fit=crop" alt="Food" onerror="this.style.display='none'">
+        <div class="banner-gradient"></div>
+      </div>
+      <div class="items-section">
+        <div class="item-row"><span class="item-name">2x Butter Chicken</span></div>
+        <div class="item-row"><span class="item-name">1x Garlic Naan</span></div>
+        <div class="more-items">+3 more items</div>
+      </div>
+      <div class="section-divider"></div>
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 1250</span>
+      </div>
+      <div class="address-row">
+        <span class="address-icon">📍</span>
+        <span class="address-text">123 Main Street, Andheri West, Mumbai</span>
+      </div>
+      <div class="actions-section">
+        <button class="btn-secondary">Reject</button>
+        <button class="btn-primary">Accept Order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ BEFORE vs AFTER ═══════════ -->
+<h2 style="margin-top: 20px; font-size: 16px; color: #1A1C1C;">📊 Before vs After</h2>
+
+<div style="display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; max-width: 820px;">
+  <!-- Before -->
+  <div>
+    <div class="variant-label" style="color:#BB0018;">→ Current (Before)</div>
+    <div class="order-card">
+      <div class="card-header" style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:18px; color:#5C5C5C;">📋</span>
+        <span style="font-size:13px; font-weight:500; color:#1A1C1C;">Order</span>
+        <div style="flex:1;"></div>
+        <span class="badge badge-new">New</span>
+        <span class="timestamp">3m ago</span>
+      </div>
+
+      <div style="padding: 12px 16px 0;">
+        <div style="display:flex; gap:10px; align-items:start; margin-bottom:8px;">
+          <div style="width:64px; height:64px; background:#F0F0F0; border-radius:8px; overflow:hidden; flex-shrink:0;">
+            <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=64&h=64&fit=crop" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">
+          </div>
+          <div style="flex:1; font-size:14px; color:#1A1C1C; font-weight:500;">2x Butter Chicken</div>
+          <div style="font-size:14px; font-weight:600; color:#1A1C1C;">Rs. 480</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:start; margin-bottom:8px;">
+          <div style="width:64px; height:64px; background:#F0F0F0; border-radius:8px; overflow:hidden; flex-shrink:0;">
+            <img src="https://images.unsplash.com/photo-1601050690597-df0568f70950?w=64&h=64&fit=crop" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">
+          </div>
+          <div style="flex:1; font-size:14px; color:#1A1C1C; font-weight:500;">1x Garlic Naan</div>
+          <div style="font-size:14px; font-weight:600; color:#1A1C1C;">Rs. 40</div>
+        </div>
+        <div class="more-items">+3 more items</div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 1250</span>
+      </div>
+
+      <!-- Special instructions (yellow) -->
+      <div style="margin:10px 16px 0; padding:10px; background:#FFF8E1; border-radius:8px; border:1px solid #FFE082; display:flex; gap:6px; align-items:start;">
+        <span style="font-size:14px; color:#F9A825;">ℹ️</span>
+        <span style="font-size:12px; color:#795548;">Extra spicy, no onions please</span>
+      </div>
+
+      <!-- Prep time -->
+      <div style="padding:4px 16px 0; display:flex; gap:4px; align-items:center;">
+        <span style="font-size:14px; color:#5C5C5C;">⏱</span>
+        <span style="font-size:12px; color:#5C5C5C;">Est. 25 min</span>
+      </div>
+
+      <div class="actions-section">
+        <button class="btn-secondary">Reject</button>
+        <button class="btn-primary">Accept Order</button>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:6px; font-size:10px; color:#BB0018; font-weight:500;">⚠️ Has: per-item prices, thumbnails, special instructions, prep time, order icon</div>
+  </div>
+
+  <!-- After -->
+  <div>
+    <div class="variant-label" style="color:#1E8E3E;">→ New (After)</div>
+    <div class="order-card">
+      <div class="card-header">
+        <span class="badge badge-new">New</span>
+        <span class="timestamp">3m ago</span>
+      </div>
+
+      <div class="banner-container">
+        <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=300&fit=crop" alt="Food" onerror="this.style.display='none'">
+        <div class="banner-gradient"></div>
+      </div>
+
+      <div class="items-section">
+        <div class="item-row">
+          <span class="item-name">2x Butter Chicken</span>
+        </div>
+        <div class="item-row">
+          <span class="item-name">1x Garlic Naan</span>
+        </div>
+        <div class="more-items">+3 more items</div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="total-row">
+        <span class="total-label">Total</span>
+        <span class="total-price">Rs. 1250</span>
+      </div>
+
+      <div class="address-row">
+        <span class="address-icon">📍</span>
+        <span class="address-text">123 Main Street, Andheri West, Mumbai</span>
+      </div>
+
+      <div class="actions-section">
+        <button class="btn-secondary">Reject</button>
+        <button class="btn-primary">Accept Order</button>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:6px; font-size:10px; color:#1E8E3E; font-weight:500;">✅ Streamlined: full-width banner, total only, items text-only, removed extras</div>
+  </div>
+</div>
+
+<div style="margin-top: 28px; padding: 12px 20px; background: #FFF8E1; border-radius: 10px; border: 1px solid #FFE082; max-width: 600px;">
+  <p style="font-size: 12px; color: #795548; line-height: 1.5;">
+    <strong>💡 Changes from current card:</strong><br>
+    • <strong>Removed:</strong> Order icon + "Order" heading, per-item prices, individual thumbnails, special instructions box, prep time<br>
+    • <strong>Added:</strong> Full-width banner image (first item's image at 150px height via BoxFit.cover)<br>
+    • <strong>Kept:</strong> Status badge, timestamp, item names, total, delivery address, action buttons<br>
+    • <strong>Adjusted:</strong> Items shown as text-only lines (no prices), max 2 items before "+N more"
+  </p>
+</div>
+
+<p style="margin-top: 24px; font-size: 11px; color: #BFBFBF;">Open in browser · Food Delivery Order Card Redesign Mockup · July 2026</p>
+
+</body>
+</html>
