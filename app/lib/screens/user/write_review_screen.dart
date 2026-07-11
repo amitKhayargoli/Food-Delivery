@@ -40,6 +40,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
 
     if (pickedFile == null) return;
 
+    if (!mounted) return;
     setState(() => _isUploading = true);
 
     try {

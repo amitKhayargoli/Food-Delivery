@@ -1122,6 +1122,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
   Widget _buildRestaurantHorizontalList(
     BuildContext context, {
     required List<Restaurant> restaurants,
+    Map<String, String>? discounts,
   }) {
     if (restaurants.isEmpty) return const SizedBox.shrink();
     return SizedBox(
@@ -1136,6 +1137,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
           return _buildRestaurantCard(
             context,
             restaurant: restaurant,
+            discount: discounts?[restaurant.id],
           );
         },
       ),
@@ -1149,6 +1151,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
   Widget _buildRestaurantCard(
     BuildContext context, {
     required Restaurant restaurant,
+    String? discount,
   }) {
     return GestureDetector(
       onTap: () {
@@ -1193,6 +1196,31 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                     ),
                   ),
                 ),
+                if (discount != null)
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: ShapeDecoration(
+                        color: const Color(0xFFF5222D),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(
+                        discount,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   left: 8,
                   bottom: 8,

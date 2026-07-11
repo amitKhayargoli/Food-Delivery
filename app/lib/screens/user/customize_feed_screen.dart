@@ -299,7 +299,7 @@ class CustomizeFeedScreen extends ConsumerWidget {
             child: Switch.adaptive(
               value: value,
               onChanged: onChanged,
-              activeColor: const Color(0xFFBB0018),
+              activeThumbColor: const Color(0xFFBB0018),
               activeTrackColor: const Color(0xFFBB0018).withValues(alpha: 0.3),
             ),
           ),

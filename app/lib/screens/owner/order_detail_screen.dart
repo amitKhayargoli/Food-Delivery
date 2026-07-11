@@ -34,7 +34,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     try {
       final api = di.sl<ApiService>();
       final raw = await api.getOrderById(orderId: _order.id, token: token);
-      if (raw.isNotEmpty && mounted) {
+      if (raw != null && raw.isNotEmpty && mounted) {
         setState(() {
           _order = Order.fromJson(raw);
           _isLoading = false;
@@ -265,10 +265,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
             ),
-      bottomSheet: _order.status == OrderStatus.pending ||
+      bottomSheet: _order.status == OrderStatus.created ||
               _order.status == OrderStatus.accepted ||
               _order.status == OrderStatus.preparing ||
-              _order.status == OrderStatus.ready ||
+              _order.status == OrderStatus.outForDelivery ||
               _order.status == OrderStatus.pickedUp
           ? _buildBottomActions()
           : null,
@@ -325,7 +325,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _order.status == OrderStatus.pending
+                  _order.status == OrderStatus.created
                       ? 'Awaiting your action'
                       : 'Updated ${_formatDate(_order.updatedAt)}',
                   style: const TextStyle(
@@ -402,7 +402,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final status = _order.status;
 
     // Cancelled / Rejected — show the timeline up to the cancellation point
-    if (status == OrderStatus.cancelled || status == OrderStatus.rejected) {
+    if (status == OrderStatus.cancelled) {
       return [
         _TimelineStep(
           icon: Icons.check_circle_rounded,
@@ -413,7 +413,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ),
         _TimelineStep(
           icon: Icons.cancel_rounded,
-          label: status == OrderStatus.cancelled ? 'Cancelled' : 'Rejected',
+          label: 'Cancelled',
           time: _formatDate(_order.cancelledAt),
           isCompleted: false,
           isActive: false,
@@ -431,17 +431,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         isActive: true,
       ),
       _TimelineStep(
-        icon: status == OrderStatus.pending
+        icon: status == OrderStatus.created
             ? Icons.radio_button_unchecked_rounded
             : Icons.check_circle_rounded,
         label: 'Order Accepted',
         time: _formatDate(_order.acceptedAt),
         isCompleted: _order.acceptedAt != null,
-        isActive: status == OrderStatus.pending,
+        isActive: status == OrderStatus.created,
       ),
       _TimelineStep(
         icon: _order.acceptedAt == null &&
-                (status == OrderStatus.pending)
+                (status == OrderStatus.created)
             ? Icons.radio_button_unchecked_rounded
             : _order.preparingAt != null
                 ? Icons.check_circle_rounded
@@ -453,7 +453,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       ),
       _TimelineStep(
         icon: _order.preparingAt == null &&
-                (status == OrderStatus.pending || status == OrderStatus.accepted)
+                (status == OrderStatus.created || status == OrderStatus.accepted)
             ? Icons.radio_button_unchecked_rounded
             : _order.readyAt != null
                 ? Icons.check_circle_rounded
@@ -465,7 +465,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       ),
       _TimelineStep(
         icon: _order.readyAt == null &&
-                (status == OrderStatus.pending ||
+                (status == OrderStatus.created ||
                     status == OrderStatus.accepted ||
                     status == OrderStatus.preparing)
             ? Icons.radio_button_unchecked_rounded
@@ -475,14 +475,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         label: 'Picked Up',
         time: _formatDate(_order.pickedUpAt),
         isCompleted: _order.pickedUpAt != null,
-        isActive: status == OrderStatus.ready,
+        isActive: status == OrderStatus.outForDelivery,
       ),
       _TimelineStep(
         icon: _order.pickedUpAt == null &&
-                (status == OrderStatus.pending ||
+                (status == OrderStatus.created ||
                     status == OrderStatus.accepted ||
                     status == OrderStatus.preparing ||
-                    status == OrderStatus.ready)
+                    status == OrderStatus.outForDelivery)
             ? Icons.radio_button_unchecked_rounded
             : _order.deliveredAt != null
                 ? Icons.check_circle_rounded
@@ -1151,7 +1151,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   List<Widget> _buildActionButtons() {
     switch (_order.status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         return [
           Expanded(
             child: SizedBox(
@@ -1259,7 +1259,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         ];
 
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         return [
           Expanded(
             child: SizedBox(
@@ -1345,13 +1345,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   (Color, Color) _getStatusColors(OrderStatus status) {
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         return (const Color(0xFFBB0018), const Color(0xFFFFF1F0));
       case OrderStatus.accepted:
         return (const Color(0xFF1967D2), const Color(0xFFE8F0FE));
       case OrderStatus.preparing:
         return (const Color(0xFFF9A825), const Color(0xFFFFF8E1));
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         return (const Color(0xFF1E8E3E), const Color(0xFFE6F4EA));
       case OrderStatus.pickedUp:
         return (const Color(0xFF1967D2), const Color(0xFFE8F0FE));
@@ -1359,20 +1359,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         return (const Color(0xFF1E8E3E), const Color(0xFFE6F4EA));
       case OrderStatus.cancelled:
         return (const Color(0xFF5E3F3C), const Color(0xFFEFEDED));
-      case OrderStatus.rejected:
-        return (const Color(0xFFBB0018), const Color(0xFFFFF1F0));
     }
   }
 
   IconData _statusIcon(OrderStatus status) {
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         return Icons.hourglass_empty_rounded;
       case OrderStatus.accepted:
         return Icons.check_circle_outline_rounded;
       case OrderStatus.preparing:
         return Icons.kitchen_rounded;
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         return Icons.check_circle_rounded;
       case OrderStatus.pickedUp:
         return Icons.delivery_dining_rounded;
@@ -1380,20 +1378,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         return Icons.task_alt_rounded;
       case OrderStatus.cancelled:
         return Icons.cancel_outlined;
-      case OrderStatus.rejected:
-        return Icons.block_rounded;
     }
   }
 
   String _statusTitle(OrderStatus status) {
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         return 'New Order';
       case OrderStatus.accepted:
         return 'Order Accepted';
       case OrderStatus.preparing:
         return 'Preparing';
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         return 'Ready for Pickup';
       case OrderStatus.pickedUp:
         return 'Picked Up';
@@ -1401,20 +1397,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         return 'Delivered';
       case OrderStatus.cancelled:
         return 'Cancelled';
-      case OrderStatus.rejected:
-        return 'Rejected';
     }
   }
 
   String _statusLabel(OrderStatus status) {
     switch (status) {
-      case OrderStatus.pending:
+      case OrderStatus.created:
         return 'New';
       case OrderStatus.accepted:
         return 'Accepted';
       case OrderStatus.preparing:
         return 'Preparing';
-      case OrderStatus.ready:
+      case OrderStatus.outForDelivery:
         return 'Ready';
       case OrderStatus.pickedUp:
         return 'Picked Up';
@@ -1422,8 +1416,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         return 'Delivered';
       case OrderStatus.cancelled:
         return 'Cancelled';
-      case OrderStatus.rejected:
-        return 'Rejected';
     }
   }
 }

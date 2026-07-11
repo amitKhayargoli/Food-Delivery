@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🛵 Dailo — Food Delivery
+# 🛵 Dailo - Food Delivery
 
-**Order. Track. Enjoy.** A complete food delivery platform with a Flutter mobile app, a real-time dispatch engine, and an admin dashboard — all wrapped in a slick, modern UI.
+**Order. Track. Enjoy.** A complete food delivery platform with a Flutter mobile app, a real-time dispatch engine, and an admin dashboard, all wrapped in a slick, modern UI.
 
 <img src="app/assets/img/deliveryguy.png" alt="Dailo Rider" width="220" />
 
@@ -23,7 +23,7 @@
 
 ### 🍕 For Customers
 - 🔍 **Smart search** across restaurants, cuisines, and menu items
-- 🌤️ **Time-of-day recommendations** — breakfast, lunch, dinner, and late-night picks
+- 🌤️ **Time-of-day recommendations** (breakfast, lunch, dinner, and late-night picks)
 - 🛒 **Cart & checkout** with sizes, add-ons, and delivery notes
 - ⭐ **Ratings & reviews** with photo uploads
 - ❤️ **Favorites** to reorder in a tap
@@ -56,7 +56,7 @@
 
 | Layer | Technology |
 |:---|:---|
-| 📱 **Mobile App** | Flutter (Dart) — Provider & Riverpod state management |
+| 📱 **Mobile App** | Flutter (Dart) with Provider & Riverpod state management |
 | ⚙️ **Backend** | Node.js + TypeScript, Express REST API |
 | 🗄️ **Database** | Supabase (PostgreSQL) with realtime subscriptions |
 | 🔐 **Auth** | Phone OTP, Email/Password, Google Sign-In, JWT |

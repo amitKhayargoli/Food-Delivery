@@ -460,6 +460,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
     }
 
     // Step 3: Confirm delivery
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

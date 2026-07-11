@@ -382,12 +382,14 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1C1C)),
             onPressed: () {
+              final nav = Navigator.of(context);
               if (_hasUnsavedChanges) {
                 _onWillPop().then((shouldPop) {
-                  if (shouldPop && mounted) Navigator.of(context).pop();
+                  if (!mounted) return;
+                  if (shouldPop) nav.pop();
                 });
               } else {
-                Navigator.of(context).pop();
+                nav.pop();
               }
             },
           ),

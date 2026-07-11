@@ -381,6 +381,19 @@ class ApiService {
     }
   }
 
+  /// Fetch the menu items for a specific restaurant (public endpoint).
+  Future<List<Map<String, dynamic>>> getRestaurantMenu(String restaurantId) async {
+    try {
+      final response = await _dio.get('/restaurants/$restaurantId/menu');
+      final data = response.data as Map<String, dynamic>;
+      final items = data['items'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   // ──────────────────────────────────────────────
   //  Menu Items API
   // ──────────────────────────────────────────────

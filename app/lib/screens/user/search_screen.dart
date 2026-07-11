@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/models.dart';
+import '../../core/services/api_service.dart';
+import '../../injection_container.dart' as di;
 import '../../state_providers.dart';
 import '../../widgets/delivery_location_header.dart';
 import 'restaurant_menu_screen.dart';
@@ -78,9 +80,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // API data state
   List<Restaurant> _allRestaurants = [];
-  List<CuisineCategory> _cuisineCategories = [];
-  bool _isLoading = true;
-  String? _error;
+  List<Category> _cuisineCategories = [];
 
   // ── Recent Searches ──
   static const int _maxRecentSearches = 8;
@@ -93,11 +93,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _fetchRestaurants() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
     try {
       final api = di.sl<ApiService>();
       final raw = await api.getRestaurants();
@@ -106,8 +101,8 @@ class _SearchScreenState extends State<SearchScreen> {
       // Derive cuisine categories from restaurant cuisine types
       final cuisineSet = <String>{};
       for (final r in restaurants) {
-        if (r.cuisineType != null && r.cuisineType!.isNotEmpty) {
-          for (final type in r.cuisineType!.split(',')) {
+        if (r.cuisineType.isNotEmpty) {
+          for (final type in r.cuisineType.split(',')) {
             final trimmed = type.trim();
             if (trimmed.isNotEmpty) {
               cuisineSet.add(trimmed);
@@ -118,7 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
       final cuisines = cuisineSet.toList()..sort();
       final categories = cuisines.asMap().entries.map((entry) {
-        return CuisineCategory(
+        return Category(
           id: 'cuisine_${entry.key}',
           name: entry.value,
           imageUrl: _cuisineImageFor(entry.value),
@@ -129,16 +124,11 @@ class _SearchScreenState extends State<SearchScreen> {
         setState(() {
           _allRestaurants = restaurants;
           _cuisineCategories = categories;
-          _isLoading = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to load restaurants. Pull down to retry.';
-          _isLoading = false;
-        });
-      }
+    } catch (_) {
+      // Keep any previously loaded data; the Consumer/provider handles
+      // the loading and error UI states.
     }
   }
 
@@ -208,7 +198,7 @@ class _SearchScreenState extends State<SearchScreen> {
       final query = _searchQuery.toLowerCase();
       filtered = filtered.where((r) {
         if (r.name.toLowerCase().contains(query)) return true;
-        if (r.cuisineType?.toLowerCase().contains(query) ?? false) return true;
+        if (r.cuisineType.toLowerCase().contains(query)) return true;
         if (r.description.toLowerCase().contains(query)) return true;
         return false;
       }).toList();
@@ -286,8 +276,8 @@ class _SearchScreenState extends State<SearchScreen> {
               final restaurantsNotifier = ref.watch(restaurantsProvider);
               final restaurantsState = restaurantsNotifier.state;
               final restaurants = restaurantsState.restaurants;
-                  // Fall back to mock data if API hasn't loaded yet
-                  final sourceList = restaurants.isNotEmpty ? restaurants : mockRestaurants;
+                  // Fall back to locally fetched data if the provider hasn't loaded yet
+                  final sourceList = restaurants.isNotEmpty ? restaurants : _allRestaurants;
                   final filteredRestaurants = _filterFrom(sourceList);
 
                   final hasActiveSearch = _searchQuery.isNotEmpty || _selectedCategoryId != null;
@@ -558,10 +548,10 @@ class _SearchScreenState extends State<SearchScreen> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: mockCategories.length,
+          itemCount: _cuisineCategories.length,
           separatorBuilder: (_, _) => const SizedBox(width: 13),
           itemBuilder: (context, index) {
-            final category = mockCategories[index];
+            final category = _cuisineCategories[index];
             final isSelected = _selectedCategoryId == category.id;
             return _buildCuisineItem(category, cuisineImages[category.id], isSelected);
           },
@@ -761,7 +751,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ]),
               const SizedBox(height: 6),
               Row(children: restaurant.foods.map((f) => f.categoryId).toSet().take(3).map((catId) {
-                final category = mockCategories.firstWhere((c) => c.id == catId, orElse: () => Category(id: '', name: '', imageUrl: ''));
+                final category = _cuisineCategories.firstWhere((c) => c.id == catId, orElse: () => Category(id: '', name: '', imageUrl: ''));
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: Container(
