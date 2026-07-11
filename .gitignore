@@ -22,7 +22,7 @@ node_modules/
 graphify-out
 opencode.json
 *.md
-!README.md
+!/README.md
 *.csv
 settings.json
 android-*.json
