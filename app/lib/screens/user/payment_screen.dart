@@ -52,7 +52,65 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     ),
   ];
 
+  /// Validate that delivery address coordinates are valid and within Nepal bounds.
+  /// Returns null if valid, or an error message string if invalid.
+  String? _validateDeliveryAddress() {
+    final addr = widget.deliveryAddress;
+    if (addr == null) {
+      return 'Delivery address is missing. Please set your delivery location.';
+    }
+
+    final lat = addr['latitude'];
+    final lng = addr['longitude'];
+
+    if (lat == null || lng == null) {
+      return 'Delivery address has no coordinates. Please select a location on the map.';
+    }
+
+    final latNum = (lat is num) ? lat.toDouble() : double.tryParse(lat.toString());
+    final lngNum = (lng is num) ? lng.toDouble() : double.tryParse(lng.toString());
+
+    if (latNum == null || lngNum == null) {
+      return 'Delivery address has invalid coordinates. Please select your location again.';
+    }
+
+    // Reject (0, 0) — default/unset coordinate
+    if (latNum == 0.0 && lngNum == 0.0) {
+      return 'Delivery address has default coordinates. Please set your delivery location on the map.';
+    }
+
+    // Reject coordinates outside Nepal bounds (~26–30°N, ~80–88°E)
+    if (latNum < 26.0 || latNum > 30.0 || lngNum < 80.0 || lngNum > 88.0) {
+      return 'Delivery address appears to be outside Nepal. Please select a valid location.';
+    }
+
+    return null;
+  }
+
   Future<void> _confirmOrder() async {
+    // Validate delivery address before placing the order
+    final addressError = _validateDeliveryAddress();
+    if (addressError != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.location_off_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text(addressError)),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        ),
+      );
+      return;
+    }
+
     final cart = ref.read(cartStateProvider);
     final subtotal = cart.subtotal;
     final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();

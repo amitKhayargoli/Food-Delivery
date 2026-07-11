@@ -256,7 +256,7 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
             type: 'role_change',
             role: 'RESTAURANT_OWNER',
           },
-        });
+        }, 'owner');
       }
     }
 
@@ -270,7 +270,7 @@ export const updateApplicationStatus = async (req: Request, res: Response): Prom
           type: 'role_change',
           role: 'CUSTOMER',
         },
-      });
+      }, 'owner');
     }
 
     res.status(200).json({
@@ -383,124 +383,6 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
     });
   } catch (error) {
     console.error('Update restaurant error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// ──────────────────────────────────────────────
-// PATCH /api/restaurant-applications/my/accepting-orders
-// Toggle whether the restaurant is accepting new orders
-// ──────────────────────────────────────────────
-export const toggleAcceptingOrders = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = await getUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Authentication required' });
-      return;
-    }
-
-    const { is_accepting_orders } = req.body;
-
-    if (typeof is_accepting_orders !== 'boolean') {
-      res.status(400).json({ error: 'is_accepting_orders must be a boolean.' });
-      return;
-    }
-
-    // Find approved application for this user
-    const { data: application, error: fetchError } = await supabase.admin
-      .from('restaurant_applications')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('status', 'APPROVED')
-      .maybeSingle();
-
-    if (fetchError || !application) {
-      res.status(404).json({ error: 'No approved restaurant application found.' });
-      return;
-    }
-
-    const { data: updated, error: updateError } = await supabase.admin
-      .from('restaurant_applications')
-      .update({
-        is_accepting_orders,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', application.id)
-      .select('id, is_accepting_orders')
-      .single();
-
-    if (updateError) {
-      console.error('Toggle accepting orders error:', updateError);
-      res.status(500).json({ error: 'Failed to toggle accepting orders.' });
-      return;
-    }
-
-    res.status(200).json({
-      message: is_accepting_orders ? 'Now accepting orders.' : 'Order acceptance paused.',
-      is_accepting_orders: updated.is_accepting_orders,
-    });
-  } catch (error) {
-    console.error('Toggle accepting orders error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// ──────────────────────────────────────────────
-// PATCH /api/restaurant-applications/my/auto-dispatch
-// Toggle automatic delivery boy assignment
-// ──────────────────────────────────────────────
-export const toggleAutoDispatch = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = await getUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Authentication required' });
-      return;
-    }
-
-    const { auto_dispatch_enabled } = req.body;
-
-    if (typeof auto_dispatch_enabled !== 'boolean') {
-      res.status(400).json({ error: 'auto_dispatch_enabled must be a boolean.' });
-      return;
-    }
-
-    // Find approved application for this user
-    const { data: application, error: fetchError } = await supabase.admin
-      .from('restaurant_applications')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('status', 'APPROVED')
-      .maybeSingle();
-
-    if (fetchError || !application) {
-      res.status(404).json({ error: 'No approved restaurant application found.' });
-      return;
-    }
-
-    const { data: updated, error: updateError } = await supabase.admin
-      .from('restaurant_applications')
-      .update({
-        auto_dispatch_enabled,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', application.id)
-      .select('id, auto_dispatch_enabled')
-      .single();
-
-    if (updateError) {
-      console.error('Toggle auto-dispatch error:', updateError);
-      res.status(500).json({ error: 'Failed to toggle auto-dispatch.' });
-      return;
-    }
-
-    res.status(200).json({
-      message: auto_dispatch_enabled
-        ? 'Auto-dispatch enabled — riders will be assigned automatically.'
-        : 'Auto-dispatch disabled — assign riders manually.',
-      auto_dispatch_enabled: updated.auto_dispatch_enabled,
-    });
-  } catch (error) {
-    console.error('Toggle auto-dispatch error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
 import { getUserId } from '../utils/auth';
-import { autoAssignRider } from '../services/dispatch.service';
 import { notifyUser } from '../services/fcm.service';
 
 /**
@@ -143,6 +142,33 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // Validate delivery_address coordinates if provided
+    if (delivery_address) {
+      const lat = typeof delivery_address.latitude === 'string'
+        ? parseFloat(delivery_address.latitude)
+        : delivery_address.latitude;
+      const lng = typeof delivery_address.longitude === 'string'
+        ? parseFloat(delivery_address.longitude)
+        : delivery_address.longitude;
+
+      if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+        res.status(400).json({ error: 'Delivery address has invalid coordinates.' });
+        return;
+      }
+
+      // Reject (0, 0) — default/unset coordinate
+      if (lat === 0 && lng === 0) {
+        res.status(400).json({ error: 'Delivery address has default coordinates. Please select a valid location on the map.' });
+        return;
+      }
+
+      // Reject coordinates outside Nepal bounds (~26–30°N, ~80–88°E)
+      if (lat < 26 || lat > 30 || lng < 80 || lng > 88) {
+        res.status(400).json({ error: 'Delivery address is outside the service area (Nepal). Please select a valid location.' });
+        return;
+      }
+    }
+
     // Generate a unique order number
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const orderNumber = `#DAILO-${chars[Math.floor(Math.random() * chars.length)]}${Math.floor(Math.random() * 10)}${Math.floor(Math.random() * 10)}${Math.floor(Math.random() * 10)}${Math.floor(Math.random() * 10)}`;
@@ -233,7 +259,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
             title: 'New Order Received! 🆕',
             body: `${customerName} placed a new order (${orderNumber}). Check your dashboard!`,
             data: { type: 'order_update', order_id: order.id, status: 'CREATED' },
-          });
+          }, 'owner');
         }
       } catch (notifError) {
         console.error('[FCM] New-order notification failed:', notifError);
@@ -666,7 +692,7 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
 
     const { data: application } = await supabase.admin
       .from('restaurant_applications')
-      .select('id, auto_dispatch_enabled')
+      .select('id')
       .eq('user_id', userId)
       .eq('status', 'APPROVED')
       .limit(1)
@@ -693,22 +719,6 @@ export const markAsReady = async (req: Request, res: Response): Promise<void> =>
     if (error || !updated) {
       res.status(404).json({ error: 'Order not found or cannot be marked as ready.' });
       return;
-    }
-
-    // ── Auto-dispatch: if enabled, find and assign nearest rider ──
-    if (application.auto_dispatch_enabled) {
-      // Fire-and-forget — don't block the response
-      autoAssignRider(updated.id, application.id).then((result) => {
-        if (result.assigned) {
-          console.log(
-            `[Dispatch] ✅ Auto-assigned ${result.riderName} to order ${updated.id}`,
-          );
-        } else {
-          console.warn(
-            `[Dispatch] ⚠️ Auto-assign failed for order ${updated.id}: ${result.reason}`,
-          );
-        }
-      });
     }
 
     // ── Notify customer: "Your order is ready for delivery!" ──
@@ -847,7 +857,8 @@ export const searchOrders = async (req: Request, res: Response): Promise<void> =
 
     const restaurantId = application.id;
 
-    const { data: orders, error } = await supabase.admin
+    // Search by order_number
+    const { data: ordersByNumber, error: numError } = await supabase.admin
       .from('orders')
       .select('*')
       .eq('restaurant_id', restaurantId)
@@ -855,11 +866,80 @@ export const searchOrders = async (req: Request, res: Response): Promise<void> =
       .order('created_at', { ascending: false })
       .limit(10);
 
-    if (error) {
-      console.error('Search orders error:', error);
-      res.status(500).json({ error: 'Failed to search orders.' });
-      return;
+    if (numError) {
+      console.error('Search orders by number error:', numError);
     }
+
+    // Search by food item name in order_items
+    const { data: orderItems } = await supabase.admin
+      .from('order_items')
+      .select('order_id')
+      .ilike('name', `%${query}%`);
+
+    let itemMatchOrderIds: string[] = [];
+    if (orderItems && orderItems.length > 0) {
+      itemMatchOrderIds = [...new Set(orderItems.map((i: any) => i.order_id))];
+    }
+
+    // Fetch orders matching item names (scoped to this restaurant)
+    let ordersByItems: any[] = [];
+    if (itemMatchOrderIds.length > 0) {
+      const { data: itemOrders, error: itemError } = await supabase.admin
+        .from('orders')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .in('id', itemMatchOrderIds)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!itemError) {
+        ordersByItems = itemOrders || [];
+      }
+    }
+
+    // Merge and deduplicate
+    const seenIds = new Set<string>();
+    const mergedOrders = [...(ordersByNumber || []), ...ordersByItems].filter((o: any) => {
+      if (seenIds.has(o.id)) return false;
+      seenIds.add(o.id);
+      return true;
+    });
+
+    const rawOrders = mergedOrders.slice(0, 10);
+
+    // ── Enrich orders with items, restaurant names, and rider info ──
+    const orderIds = rawOrders.map((o: any) => o.id);
+
+    // Fetch order_items for all returned orders
+    const { data: allItems } = await supabase.admin
+      .from('order_items')
+      .select('*')
+      .in('order_id', orderIds);
+
+    // Fetch restaurant names
+    const restaurantIds = rawOrders.map((o: any) => o.restaurant_id);
+    const restaurantNames = await getRestaurantNames(restaurantIds);
+
+    // Fetch rider info for orders that have delivery_boy_id set
+    const riderIds = rawOrders
+      .map((o: any) => o.delivery_boy_id)
+      .filter(Boolean) as string[];
+    const riderInfo = await getRiderInfo(riderIds);
+
+    // Attach items, restaurant_name, and delivery_boy info to each order
+    const orders = rawOrders.map((order: any) => {
+      const info = riderInfo.get(order.delivery_boy_id);
+      return {
+        ...order,
+        items: (allItems || []).filter(
+          (item: any) => item.order_id === order.id,
+        ),
+        restaurant_name: restaurantNames.get(order.restaurant_id) || '',
+        delivery_boy_name: info?.username || null,
+        delivery_boy_avatar_url: info?.avatar_url || null,
+        delivery_boy_phone: info?.phone || null,
+      };
+    });
 
     res.status(200).json({ orders });
   } catch (error) {
@@ -1357,7 +1437,7 @@ export const declineOrder = async (req: Request, res: Response): Promise<void> =
           rider_id: userId,
           restaurant_id: order.restaurant_id,
         },
-      }).catch((err: any) =>
+      }, 'owner').catch((err: any) =>
         console.error('[Decline] Owner notification failed:', err?.message),
       );
     }
@@ -1454,7 +1534,7 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
           order_id: id,
           rider_id: riderId,
         },
-      }).catch((err: any) =>
+      }, 'rider').catch((err: any) =>
         console.error('[CancelOrder] Rider notification failed:', err?.message),
       );
 
@@ -1494,7 +1574,7 @@ export const cancelOrder = async (req: Request, res: Response): Promise<void> =>
           order_id: id,
           customer_id: userId,
         },
-      }).catch((err: any) =>
+      }, 'owner').catch((err: any) =>
         console.error('[CancelOrder] Owner notification failed:', err?.message),
       );
     }

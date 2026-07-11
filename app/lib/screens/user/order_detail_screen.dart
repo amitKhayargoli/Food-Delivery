@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
+import '../../core/services/baato_eta_service.dart';
 import '../../widgets/rider_map_view.dart';
 import '../../providers/auth_provider.dart';
 import '../../injection_container.dart' as di;
@@ -50,6 +51,24 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   /// Max time without a Realtime update before falling back to polling.
   static const _pollingInterval = Duration(seconds: 15);
 
+  // ── Baato Directions-based ETA ──
+  final BaatoEtaService _baatoEtaService = BaatoEtaService();
+
+  /// Cached ETA in minutes from the Baato Directions API (road-based distance).
+  int? _etaMinutes;
+
+  /// Cached road distance in km from the Baato Directions API.
+  double? _etaDistanceKm;
+
+  /// Whether the Baato ETA request is currently in-flight.
+  bool _isEtaLoading = false;
+
+  /// Timer to periodically refresh the Baato Directions ETA.
+  Timer? _etaRefreshTimer;
+
+  /// How often to refresh the ETA from Baato Directions API.
+  static const _etaRefreshInterval = Duration(seconds: 30);
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +83,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void dispose() {
     _unsubscribeFromRiderLocation();
     _riderPollingTimer?.cancel();
+    _etaRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -123,6 +143,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // Subscribe to live updates
     _subscribeToRiderLocation(riderId);
+
+    // Start periodic Baato ETA refresh
+    _startEtaRefresh();
   }
 
   /// Fetch the restaurant's lat/lng from the restaurant_applications table.
@@ -221,6 +244,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               );
             });
           }
+
+          // Refresh road-based ETA when rider moves
+          _refreshEta();
         },
       );
 
@@ -274,10 +300,56 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             type: RiderMapPointType.rider,
           );
         });
+        // Refresh road-based ETA on polled location update too
+        _refreshEta();
       } catch (e) {
         debugPrint('[RT-RiderLocation] Polling fetch failed: $e');
       }
     });
+  }
+
+  /// Start periodic ETA refresh from Baato Directions API.
+  /// Refreshes every [_etaRefreshInterval] so the ETA stays current
+  /// as the rider moves along the road network.
+  void _startEtaRefresh() {
+    _etaRefreshTimer?.cancel();
+    _refreshEta(); // immediate first fetch
+    _etaRefreshTimer = Timer.periodic(_etaRefreshInterval, (_) {
+      _refreshEta();
+    });
+  }
+
+  /// Fetch road-based ETA from Baato Directions API and update state.
+  /// Falls back silently — the ETA badge simply won't update if the API fails.
+  Future<void> _refreshEta() async {
+    if (_liveRiderLocation == null) return;
+    if (_order.deliveryAddress?.latitude == null ||
+        _order.deliveryAddress?.longitude == null) {
+      return;
+    }
+
+    if (_isEtaLoading) return;
+    _isEtaLoading = true;
+
+    try {
+      final response = await _baatoEtaService.getEta(
+        fromLat: _liveRiderLocation!.latitude,
+        fromLng: _liveRiderLocation!.longitude,
+        toLat: _order.deliveryAddress!.latitude!,
+        toLng: _order.deliveryAddress!.longitude!,
+      );
+
+      if (response.isSuccess && mounted) {
+        setState(() {
+          _etaMinutes = response.result!.durationMinutes;
+          _etaDistanceKm = response.result!.distanceKm;
+        });
+      }
+    } catch (_) {
+      // Silently fall back — Haversine estimate or null will be shown
+    } finally {
+      _isEtaLoading = false;
+    }
   }
 
   void _unsubscribeFromRiderLocation() {
@@ -318,8 +390,52 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  /// Estimate ETA text based on rough distance (placeholder — real ETA
-  /// requires Baato Directions API call).
+  /// Maximum reasonable delivery distance in km.
+  static const double _maxReasonableDistanceKm = 100.0;
+
+  /// Format the road distance text for display (e.g. "2.3 km away").
+  /// Returns null when no distance data is available.
+  String? _estimatedDistanceText() {
+    final double? km = _etaDistanceKm ?? _haversineDistanceKm();
+    if (km == null || km <= 0 || km > _maxReasonableDistanceKm) return null;
+    if (km < 1.0) return '${(km * 1000).round()} m away';
+    return '${km.toStringAsFixed(1)} km away';
+  }
+
+  /// Calculate Haversine straight-line distance in km as a fallback.
+  double? _haversineDistanceKm() {
+    if (_liveRiderLocation == null) return null;
+    if (_order.deliveryAddress?.latitude == null ||
+        _order.deliveryAddress?.longitude == null) {
+      return null;
+    }
+    final double lat1 = _liveRiderLocation!.latitude;
+    final double lon1 = _liveRiderLocation!.longitude;
+    final double lat2 = _order.deliveryAddress!.latitude!;
+    final double lon2 = _order.deliveryAddress!.longitude!;
+    if ((lat1 == 0.0 && lon1 == 0.0) || (lat2 == 0.0 && lon2 == 0.0)) {
+      return null;
+    }
+    const double R = 6371;
+    final double lat1Rad = _deg2rad(lat1);
+    final double lon1Rad = _deg2rad(lon1);
+    final double lat2Rad = _deg2rad(lat2);
+    final double lon2Rad = _deg2rad(lon2);
+    final double dLat = lat2Rad - lat1Rad;
+    final double dLon = lon2Rad - lon1Rad;
+    final double a = (sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2))
+        .clamp(0.0, 1.0);
+    final double c = 2 * asin(sqrt(a));
+    return R * c;
+  }
+
+  /// Build the ETA text string shown to the user.
+  ///
+  /// Priority order:
+  /// 1. Baato Directions API result (road-based ETA from [_etaMinutes])
+  /// 2. Haversine straight-line fallback (when API unavailable)
+  /// 3. null (hide ETA badge) when coordinates are invalid
   String? _estimatedEtaText() {
     if (_liveRiderLocation == null) return null;
     if (_order.deliveryAddress?.latitude == null ||
@@ -327,12 +443,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       return null;
     }
 
-    // Rough Haversine-based time estimate: assume avg speed 20 km/h
-    const double avgSpeedKmh = 20.0;
     final double lat1 = _liveRiderLocation!.latitude;
     final double lon1 = _liveRiderLocation!.longitude;
     final double lat2 = _order.deliveryAddress!.latitude!;
     final double lon2 = _order.deliveryAddress!.longitude!;
+
+    // Reject default / invalid coordinates (0, 0)
+    if ((lat1 == 0.0 && lon1 == 0.0) || (lat2 == 0.0 && lon2 == 0.0)) {
+      return null;
+    }
+
+    // ── Priority 1: Baato Directions road-based ETA ──
+    if (_etaMinutes != null && _etaMinutes! > 0) {
+      final int min = _etaMinutes!;
+      if (min <= 1) return 'Arriving now';
+      if (min < 60) return 'Rider is $min min away';
+      return 'Rider is ${min ~/ 60} h ${min % 60} min away';
+    }
+
+    // ── Priority 2: Haversine straight-line estimate (fallback) ──
+    const double avgSpeedKmh = 20.0;
 
     // Convert all lat/lng to radians before trig functions
     const double R = 6371; // Earth radius in km
@@ -350,6 +480,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         .clamp(0.0, 1.0);
     final double c = 2 * asin(sqrt(a));
     final double distanceKm = R * c;
+
+    // Sanity check: if the straight-line distance is > 100 km the
+    // coordinates are likely invalid. Don't show an absurd ETA.
+    if (distanceKm > _maxReasonableDistanceKm) return null;
 
     final int minutes = (distanceKm / avgSpeedKmh * 60).round();
     if (minutes < 1) return 'Arriving now';
@@ -913,6 +1047,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         _order.deliveryAddress?.longitude != null;
 
     final etaText = _estimatedEtaText();
+    final distanceText = _estimatedDistanceText();
 
     final canCancelOrder = _order.status != OrderStatus.delivered &&
         _order.status != OrderStatus.cancelled &&
@@ -922,7 +1057,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       backgroundColor: const Color(0xFFFAF9F9),
       appBar: AppBar(
         title: Text(
-          'Order #${_order.orderNumber}',
+          'Order',
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
@@ -937,7 +1072,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           children: [
             // ── Live Rider Tracking Map ──
             if (showLiveMap && hasDropoffLocation && _liveRiderLocation != null)
-              _buildLiveTrackingCard(etaText),
+              _buildLiveTrackingCard(etaText, distanceText),
 
             // ── Restaurant name ──
             if (_order.restaurantName.isNotEmpty)
@@ -1510,8 +1645,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  /// A card showing the live rider tracking map with ETA and Call Rider.
-  Widget _buildLiveTrackingCard(String? etaText) {
+  /// A card showing the live rider tracking map with ETA, distance, and Call Rider.
+  Widget _buildLiveTrackingCard(String? etaText, String? distanceText) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -1623,6 +1758,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 type: RiderMapPointType.dropoff,
               ),
               etaText: etaText,
+              distanceText: distanceText,
               height: 220,
               showEtaBar: false,
               showRoute: true,
@@ -1648,8 +1784,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ),
 
-          // ── ETA bar (bottom) ──
-          if (etaText != null)
+          // ── ETA + Distance bar (bottom) ──
+          if (etaText != null || distanceText != null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1663,14 +1799,37 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   const Icon(Icons.access_time_rounded,
                       size: 18, color: Color(0xFF1967D2)),
                   const SizedBox(width: 8),
-                  Text(
-                    etaText,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1C1C),
+                  if (etaText != null)
+                    Flexible(
+                      child: Text(
+                        etaText,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1C1C),
+                        ),
+                      ),
                     ),
-                  ),
+                  if (etaText != null && distanceText != null) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 1, height: 14,
+                      color: const Color(0xFFC8C8CC),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (distanceText != null)
+                    Flexible(
+                      child: Text(
+                        distanceText,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
                   const Spacer(),
                   SizedBox(
                     height: 36,

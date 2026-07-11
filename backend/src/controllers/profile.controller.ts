@@ -101,6 +101,83 @@ export const getDeliveryLocation = async (
 };
 
 // ──────────────────────────────────────────────
+// PATCH  /api/profile
+// Update the user's username, email, and/or phone.
+// Expects: { username?: string, email?: string, phone?: string }
+// ──────────────────────────────────────────────
+
+export const updateProfile = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const { username, email, phone } = req.body;
+    const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+
+    if (username !== undefined) {
+      if (typeof username !== 'string' || username.trim().length < 2) {
+        res.status(400).json({ error: 'Username must be at least 2 characters.' });
+        return;
+      }
+      updates.username = username.trim();
+    }
+
+    if (email !== undefined) {
+      if (typeof email !== 'string' || !email.includes('@') || !email.includes('.')) {
+        res.status(400).json({ error: 'Please provide a valid email address.' });
+        return;
+      }
+      updates.email = email.trim().toLowerCase();
+    }
+
+    if (phone !== undefined) {
+      if (typeof phone !== 'string' || phone.trim().length < 7) {
+        res.status(400).json({ error: 'Invalid phone number.' });
+        return;
+      }
+      updates.phone = phone.trim();
+    }
+
+    if (Object.keys(updates).length <= 1) {
+      res.status(400).json({ error: 'No fields to update.' });
+      return;
+    }
+
+    const { data, error } = await supabase.admin
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select('id, username, email, phone')
+      .single();
+
+    if (error) {
+      console.error('[profile] updateProfile error:', error);
+      res.status(500).json({ error: 'Failed to update profile.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        id: data.id,
+        username: data.username,
+        email: data.email,
+        phone: data.phone,
+      },
+    });
+  } catch (error) {
+    console.error('[profile] updateProfile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ──────────────────────────────────────────────
 // PATCH  /api/profile/delivery-location
 // ──────────────────────────────────────────────
 

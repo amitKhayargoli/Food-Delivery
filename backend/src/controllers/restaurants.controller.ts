@@ -58,7 +58,8 @@ export const getRestaurants = async (_req: Request, res: Response): Promise<void
       description: r.description || '',
       logo_url: r.logo_url || '',
       banner_url: r.cover_image_url || r.logo_url || '',
-      rating: 4.5, // Default rating — can be calculated from reviews later
+      rating: (r.average_rating as number) ?? 4.5,
+      total_reviews: (r.total_reviews as number) ?? 0,
       delivery_time_minutes: 30, // Default — can be set per restaurant later
       cuisine_type: r.cuisine_type || '',
       open_time: r.open_time || '9:00 AM',

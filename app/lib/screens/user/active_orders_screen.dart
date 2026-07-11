@@ -330,8 +330,8 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
                     const Icon(Icons.receipt_long_rounded,
                         size: 18, color: Color(0xFFBB0018)),
                     const SizedBox(width: 8),
-                    Text(
-                      '#${order.orderNumber}',
+                    const Text(
+                      'Order',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,

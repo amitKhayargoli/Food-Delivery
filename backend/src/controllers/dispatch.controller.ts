@@ -157,6 +157,84 @@ export const getDispatchAnalytics = async (req: Request, res: Response): Promise
       }
     }
 
+    // ── Daily order counts (last 7 days) for the bar chart ──
+    const dailyData: { date: string; dispatched: number; delivered: number }[] = [];
+    const today = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date(today);
+      day.setDate(day.getDate() - i);
+      const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).toISOString();
+      const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).toISOString();
+
+      const dispatchedCount = (dispatchedOrders ?? []).filter((o: any) => {
+        const assigned = new Date(o.assigned_at);
+        return assigned >= new Date(dayStart) && assigned < new Date(dayEnd);
+      }).length;
+
+      const deliveredCount = (pickedOrders ?? []).filter((o: any) => {
+        const pickedUp = new Date(o.picked_up_at);
+        return pickedUp >= new Date(dayStart) && pickedUp < new Date(dayEnd);
+      }).length;
+
+      const dateStr = day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      dailyData.push({ date: dateStr, dispatched: dispatchedCount, delivered: deliveredCount });
+    }
+
+    // ── Most Ordered Food Items ──
+    // Query order_items joined with orders to count how many times each
+    // food item has been ordered for this restaurant.
+    const mostOrderedItems: { name: string; image_url: string | null; total_qty: number; total_revenue: number }[] = [];
+    try {
+      const { data: orderItemsForRestaurant } = await supabase.admin
+        .from('order_items')
+        .select(`
+          name,
+          image_url,
+          food_id,
+          qty,
+          unit_price,
+          order_id
+        `)
+        .in('order_id', orderIds);
+
+      if (orderItemsForRestaurant && orderItemsForRestaurant.length > 0) {
+        // Aggregate by food_id (group items with the same food_id)
+        const itemMap = new Map<string, {
+          name: string;
+          image_url: string | null;
+          total_qty: number;
+          total_revenue: number;
+        }>();
+
+        for (const item of orderItemsForRestaurant) {
+          const foodId = item.food_id || item.name;
+          const existing = itemMap.get(foodId) || {
+            name: item.name || 'Unknown',
+            image_url: item.image_url || null,
+            total_qty: 0,
+            total_revenue: 0,
+          };
+          existing.total_qty += (item.qty || 0);
+          existing.total_revenue += ((item.qty || 0) * (item.unit_price || 0));
+          // Keep the first non-null image_url we find
+          if (!existing.image_url && item.image_url) {
+            existing.image_url = item.image_url;
+          }
+          itemMap.set(foodId, existing);
+        }
+
+        // Convert to array, sort by total_qty descending, take top 10
+        mostOrderedItems.push(
+          ...Array.from(itemMap.values())
+            .sort((a, b) => b.total_qty - a.total_qty)
+            .slice(0, 10),
+        );
+      }
+    } catch (itemsError) {
+      console.error('[DispatchAnalytics] Most-ordered items error:', itemsError);
+    }
+
     res.status(200).json({
       analytics: {
         avg_dispatch_time_s: avgDispatchTimeS,
@@ -165,6 +243,8 @@ export const getDispatchAnalytics = async (req: Request, res: Response): Promise
         total_rider_ratings: totalRiderRatings,
         total_dispatched: dispatchedOrders?.length ?? 0,
         total_delivered: pickedOrders?.length ?? 0,
+        daily_orders: dailyData,
+        most_ordered_items: mostOrderedItems,
       },
     });
   } catch (error) {

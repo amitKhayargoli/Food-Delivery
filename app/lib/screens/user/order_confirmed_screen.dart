@@ -24,14 +24,7 @@ class _OrderConfirmedScreenState extends State<OrderConfirmedScreen>
   late final Animation<double> _scaleAnimation;
   late final Animation<double> _fadeAnimation;
 
-  final String _orderNumber = _generateOrderNumber();
   final String _estimatedTime = '${Random().nextInt(20) + 20}';
-
-  static String _generateOrderNumber() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final rand = Random();
-    return '#DAILO-${chars[rand.nextInt(chars.length)]}${rand.nextInt(10)}${rand.nextInt(10)}${rand.nextInt(10)}${rand.nextInt(10)}';
-  }
 
   @override
   void initState() {
@@ -135,99 +128,6 @@ class _OrderConfirmedScreenState extends State<OrderConfirmedScreen>
                           ),
                           const SizedBox(height: 32),
 
-                          // Order number card
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 16,
-                            ),
-                            decoration: ShapeDecoration(
-                              color: const Color(0xFFFFF8F8),
-                              shape: RoundedRectangleBorder(
-                                side: const BorderSide(
-                                  width: 1,
-                                  color: Color(0x1AF5222D),
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: ShapeDecoration(
-                                    color: const Color(0xFFFFF1F0),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.receipt_long_rounded,
-                                      color: Color(0xFFF5222D),
-                                      size: 22,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Order Number',
-                                        style: TextStyle(
-                                          color: Color(0xFF999999),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w400,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _orderNumber,
-                                        style: const TextStyle(
-                                          color: Color(0xFF1A1A1A),
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: () {
-                                    // Copy to clipboard
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content:
-                                            Text('Order number copied!'),
-                                        duration: Duration(seconds: 1),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: ShapeDecoration(
-                                      color: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    child: const Icon(
-                                      Icons.copy_rounded,
-                                      size: 16,
-                                      color: Color(0xFF999999),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                           const SizedBox(height: 12),
 
                           // Estimated delivery time card
