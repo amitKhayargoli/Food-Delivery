@@ -60,6 +60,7 @@ dependencies:
   flutter_webrtc: ^1.5.2
   url_launcher: ^6.3.2
   battery_plus: ^7.1.0
+  fl_chart: ^0.70.2
 
 dev_dependencies:
   flutter_test:

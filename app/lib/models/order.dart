@@ -249,6 +249,49 @@ class Order {
     );
   }
 
+  /// Create a copy of this Order with optionally updated fields.
+  Order copyWith({
+    OrderStatus? status,
+    String? deliveryBoyId,
+    String? deliveryBoyName,
+    String? deliveryBoyAvatarUrl,
+    String? deliveryBoyPhone,
+  }) {
+    return Order(
+      id: id,
+      userId: userId,
+      restaurantId: restaurantId,
+      restaurantName: restaurantName,
+      orderNumber: orderNumber,
+      status: status ?? this.status,
+      items: items,
+      subtotal: subtotal,
+      deliveryFee: deliveryFee,
+      total: total,
+      deliveryAddress: deliveryAddress,
+      deliveryNotes: deliveryNotes,
+      specialInstructions: specialInstructions,
+      estimatedPrepTime: estimatedPrepTime,
+      deliveryBoyId: deliveryBoyId ?? this.deliveryBoyId,
+      deliveryBoyName: deliveryBoyName ?? this.deliveryBoyName,
+      deliveryBoyAvatarUrl: deliveryBoyAvatarUrl ?? this.deliveryBoyAvatarUrl,
+      deliveryBoyPhone: deliveryBoyPhone ?? this.deliveryBoyPhone,
+      customerPhone: customerPhone,
+      assignedAt: assignedAt,
+      acceptedAt: acceptedAt,
+      preparingAt: preparingAt,
+      readyAt: readyAt,
+      pickedUpAt: pickedUpAt,
+      deliveredAt: deliveredAt,
+      cancelledAt: cancelledAt,
+      rejectionReason: rejectionReason,
+      riderNote: riderNote,
+      deliveryPhotoUrl: deliveryPhotoUrl,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
   static DateTime? _parseDateTime(String? s) {
     if (s == null || s.isEmpty) return null;
     return DateTime.tryParse(s);

@@ -82,10 +82,18 @@ class DeliveryLocationService {
       final data = await _api.fetchDeliveryLocation(token: token);
       if (data == null) return null;
 
+      final latRaw = (data['latitude'] as num?)?.toDouble();
+      final lngRaw = (data['longitude'] as num?)?.toDouble();
+
+      // Reject missing, zero, or out-of-Nepal-bounds coordinates
+      if (latRaw == null || lngRaw == null) return null;
+      if (latRaw == 0.0 && lngRaw == 0.0) return null;
+      if (latRaw < 26.0 || latRaw > 30.0 || lngRaw < 80.0 || lngRaw > 88.0) return null;
+
       final location = SelectedDeliveryLocation(
         address: data['address'] as String? ?? '',
-        latitude: (data['latitude'] as num?)?.toDouble() ?? 0,
-        longitude: (data['longitude'] as num?)?.toDouble() ?? 0,
+        latitude: latRaw,
+        longitude: lngRaw,
       );
 
       if (location.address.isNotEmpty) {

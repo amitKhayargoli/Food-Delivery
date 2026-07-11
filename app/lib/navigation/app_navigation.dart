@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:convex_bottom_bar/convex_bottom_bar.dart';
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
+import '../core/services/supabase_client_service.dart';
 import '../screens/user/home_screen.dart';
 import '../screens/user/search_screen.dart';
 import '../screens/user/cart_screen.dart';
@@ -45,6 +49,7 @@ class _NavBarStyle extends StyleHook {
 
 class _AppNavigationState extends State<AppNavigation> {
   int _currentIndex = 0;
+  bool _notifInitialized = false;
   /// Shared cart icon widget used in the nav bar (inactive state).
   static final Widget _cartIcon = SvgPicture.asset(
     'assets/icons/cart.svg',
@@ -105,6 +110,7 @@ class _AppNavigationState extends State<AppNavigation> {
       case 'DELIVERY_BOY':
         return _deliveryScreens;
       case 'USER':
+      case 'CUSTOMER':
       default:
         return _userScreens;
     }
@@ -150,6 +156,7 @@ class _AppNavigationState extends State<AppNavigation> {
       case 'DELIVERY_BOY':
         return _deliveryNavItems;
       case 'USER':
+      case 'CUSTOMER':
       default:
         return _userNavItems;
     }
@@ -224,6 +231,7 @@ class _AppNavigationState extends State<AppNavigation> {
         subtitle = 'Accept delivery jobs and earn';
         break;
       case 'USER':
+      case 'CUSTOMER':
       default:
         icon = Icons.person_rounded;
         label = 'Customer';
@@ -329,9 +337,65 @@ class _AppNavigationState extends State<AppNavigation> {
     );
   }
 
+  /// Derive the notification role from the effective app role.
+  String _notificationRoleFor(String appRole) {
+    switch (appRole) {
+      case 'RESTAURANT_OWNER':
+        return 'owner';
+      case 'DELIVERY_BOY':
+        return 'rider';
+      case 'ADMIN':
+        return 'admin';
+      case 'USER':
+      case 'CUSTOMER':
+      default:
+        return 'customer';
+    }
+  }
+
+  /// Re-initialize the notification provider when the active role changes.
+  /// This ensures the user only sees notifications relevant to their
+  /// currently active role (e.g. customer vs restaurant owner).
+  void _reinitializeNotifications(AuthProvider authProvider) {
+    final token = authProvider.token;
+    final user = SupabaseClientService.client.auth.currentUser;
+    if (token == null || user == null) return;
+
+    final notifProvider = context.read<NotificationProvider>();
+    final role = _notificationRoleFor(authProvider.activeRole);
+    notifProvider.setRole(role);
+    notifProvider.init(token, user.id, role: role);
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final notifProvider = context.read<NotificationProvider>();
+
+    // Initialize notification provider once auth is ready
+    if (authProvider.isAuthenticated && authProvider.token != null && !_notifInitialized) {
+      _notifInitialized = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reinitializeNotifications(authProvider);
+      });
+    }
+
+    // Re-initialize when role changes (user switches between customer/owner/rider)
+    if (_notifInitialized &&
+        authProvider.isAuthenticated &&
+        authProvider.token != null) {
+      final expectedRole = _notificationRoleFor(authProvider.activeRole);
+      if (notifProvider.currentRole != expectedRole) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _reinitializeNotifications(authProvider);
+        });
+      }
+    }
+
+    // Reset notification init flag on logout so it re-initializes on next login
+    if (!authProvider.isAuthenticated && _notifInitialized) {
+      _notifInitialized = false;
+    }
 
     // Show a snackbar if the role was just changed by a realtime update
     final roleChangeMsg = authProvider.roleChangeMessage;
@@ -373,10 +437,36 @@ class _AppNavigationState extends State<AppNavigation> {
 
     return Scaffold(
       body: _currentScreens[_currentIndex],
-      bottomNavigationBar: GestureDetector(
-        onLongPress: authProvider.availableRoles.length > 1
-            ? () => _showRoleSwitcher(authProvider)
-            : null,
+      bottomNavigationBar: _LongPressDetector(
+        onLongPress: () {
+          if (authProvider.availableRoles.length > 1) {
+            _showRoleSwitcher(authProvider);
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.white, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        authProvider.isLoading
+                            ? 'Loading your roles...'
+                            : 'No other roles available to switch to',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF1A1C1C),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+              ),
+            );
+          }
+        },
         child: StyleProvider(
         style: _NavBarStyle(),
         child: ConvexAppBar(
@@ -395,7 +485,59 @@ class _AppNavigationState extends State<AppNavigation> {
         ),
     );
   }
-
 }
 
+/// Detects a long press on the child widget using raw pointer events.
+/// This bypasses the gesture arena, so it works even when the child
+/// (e.g. ConvexAppBar) has its own internal gesture recognizers that
+/// would otherwise swallow the parent's [GestureDetector.onLongPress].
+class _LongPressDetector extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onLongPress;
+
+  const _LongPressDetector({
+    required this.child,
+    this.onLongPress,
+  });
+
+  @override
+  State<_LongPressDetector> createState() => _LongPressDetectorState();
+}
+
+class _LongPressDetectorState extends State<_LongPressDetector> {
+  Timer? _timer;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (widget.onLongPress == null) return;
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 500), () {
+      HapticFeedback.mediumImpact();
+      if (mounted) widget.onLongPress?.call();
+    });
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _timer?.cancel();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _timer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: widget.child,
+    );
+  }
+}
 

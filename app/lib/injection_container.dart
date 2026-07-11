@@ -24,6 +24,7 @@ import 'core/services/push_notification_service.dart';
 import 'core/services/delivery_location_service.dart';
 import 'core/services/rider_location_service.dart';
 import 'providers/rider_notes_provider.dart';
+import 'providers/notification_provider.dart';
 
 final sl = GetIt.instance;
 
@@ -88,6 +89,7 @@ Future<void> init() async {
   sl.registerLazySingleton(() => DeliveryLocationService(sl<SharedPreferences>(), sl<ApiService>()));
   sl.registerLazySingleton(() => RiderLocationService(sl<ApiService>()));
   sl.registerLazySingleton(() => RiderNotesProvider(sl<ApiService>()));
+  sl.registerLazySingleton(() => NotificationProvider(sl<ApiService>()));
   sl.registerLazySingleton<GlobalKey<NavigatorState>>(
     () => GlobalKey<NavigatorState>(),
   );

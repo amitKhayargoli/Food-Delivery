@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:dio/dio.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../firebase_options.dart';
 import '../../injection_container.dart' as di;
@@ -97,50 +96,17 @@ class PushNotificationService {
 
   /// Handle a push notification received while the app is in the foreground.
   void _handleForegroundMessage(RemoteMessage message) {
-    final data = message.data;
-    final type = data['type'] as String?;
-
     // Navigate to the relevant screen based on notification type
-    _navigateToDeepLink(data);
+    _navigateToDeepLink(message.data);
 
-    // Also show a snackbar for the notification content
-    final notification = message.notification;
-    if (notification == null) return;
-
-    final parts = [notification.title, notification.body]
-        .where((s) => s != null && s.isNotEmpty)
-        .join(': ');
-    if (parts.isEmpty) return;
-
-    final navigatorKey = di.sl<GlobalKey<NavigatorState>>();
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.notifications_active_outlined, color: Colors.white, size: 18),
-              const SizedBox(width: 10),
-              Expanded(child: Text(parts, maxLines: 2, overflow: TextOverflow.ellipsis)),
-            ],
-          ),
-          backgroundColor: const Color(0xFF1A1C1C),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        ),
-      );
-    }
+    // Toast is handled by NotificationProvider via Realtime subscription.
+    // The FCM handler only handles deep-link navigation.
   }
 
   /// Handle the user tapping a notification that launched/brought the app
   /// to the foreground from a background state.
   void _handleNotificationTap(RemoteMessage message) {
-    final data = message.data;
-    final type = data['type'] as String?;
-
-    _navigateToDeepLink(data);
+    _navigateToDeepLink(message.data);
   }
 
   /// Check if the app was launched from a terminated state by tapping a
@@ -150,10 +116,7 @@ class PushNotificationService {
       final message = await FirebaseMessaging.instance.getInitialMessage();
       if (message == null) return;
 
-      final data = message.data;
-      final type = data['type'] as String?;
-
-      _navigateToDeepLink(data);
+      _navigateToDeepLink(message.data);
     } catch (e) {
       debugPrint('[PushNotification] getInitialMessage error: $e');
     }
@@ -258,6 +221,5 @@ class PushNotificationService {
 /// Must be a top-level function (not a method) per Firebase requirements.
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
-  final data = message.data;
   debugPrint('[PushNotification][BG] Background notification received');
 }

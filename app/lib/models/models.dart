@@ -195,6 +195,7 @@ class Restaurant {
   final String bannerUrl;
   final double rating;
   final int deliveryTimeMinutes;
+  final int totalReviews;
   final List<Food> foods;
   final String cuisineType;
   final String address;
@@ -208,6 +209,7 @@ class Restaurant {
     required this.bannerUrl,
     required this.rating,
     required this.deliveryTimeMinutes,
+    this.totalReviews = 0,
     required this.foods,
     this.cuisineType = '',
     this.address = '',
@@ -236,6 +238,9 @@ class Restaurant {
       deliveryTimeMinutes: (json['delivery_time_minutes'] as num?)?.toInt() ??
           (json['deliveryTimeMinutes'] as num?)?.toInt() ??
           30,
+      totalReviews: (json['total_reviews'] as num?)?.toInt() ??
+          (json['totalReviews'] as num?)?.toInt() ??
+          0,
       foods: parsedFoods,
       cuisineType: json['cuisine_type'] as String? ??
           json['cuisineType'] as String? ??

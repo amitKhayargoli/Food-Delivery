@@ -8,6 +8,7 @@ import 'cart_provider.dart';
 import 'core/config/supabase_config.dart';
 import 'core/services/supabase_client_service.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
 import 'providers/rider_notes_provider.dart';
 import 'screens/auth/splash_screen.dart';
 import 'injection_container.dart' as di;
@@ -54,6 +55,7 @@ class MyAppWithProviders extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => CartProvider(di.sl<SharedPreferences>())),
         ChangeNotifierProvider(create: (_) => di.sl<RiderNotesProvider>()),
+        ChangeNotifierProvider(create: (_) => di.sl<NotificationProvider>()),
       ],
       child: const MyApp(),
     );

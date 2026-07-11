@@ -19,6 +19,8 @@ class AuthProvider with ChangeNotifier {
   String? _token;
   String? _role;
   String? _username;
+  String? _email;
+  String? _phone;
   String? _avatarUrl;
   List<String> _roles = ['USER'];       // All roles the user has
   String _activeRole = 'USER';          // The role the user is currently using
@@ -33,6 +35,8 @@ class AuthProvider with ChangeNotifier {
   String? get token => _token;
   String? get role => _role;
   String? get username => _username;
+  String? get email => _email;
+  String? get phone => _phone;
   String? get avatarUrl => _avatarUrl;
 
   /// All roles the user holds (e.g. ['USER', 'RESTAURANT_OWNER']).
@@ -66,6 +70,49 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update the user's display name in memory + SharedPreferences.
+  Future<void> updateUsername(String newUsername) async {
+    _username = newUsername;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('username', newUsername);
+    notifyListeners();
+  }
+
+  /// Update the user's phone in memory + SharedPreferences.
+  Future<void> updatePhone(String newPhone) async {
+    _phone = newPhone;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('phone', newPhone);
+    notifyListeners();
+  }
+
+  /// Update the user's email in memory + SharedPreferences.
+  Future<void> updateEmail(String newEmail) async {
+    _email = newEmail;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('email', newEmail);
+    notifyListeners();
+  }
+
+  /// Strip out placeholder emails (e.g. "{phone}@placeholder.local" created
+  /// by the backend for phone-only signups) so they never appear in the UI.
+  String? _cleanEmail(String? email) {
+    if (email == null || email.endsWith('@placeholder.local')) return null;
+    return email;
+  }
+
+  /// Normalize a single role name — maps 'CUSTOMER' to 'USER' since they
+  /// are functionally equivalent in the app (both refer to the customer role).
+  /// This allows the database to store either value without breaking the UI.
+  String _normalizeRole(String role) {
+    return role == 'CUSTOMER' ? 'USER' : role;
+  }
+
+  /// Normalize a list of roles — applies [_normalizeRole] to each entry.
+  List<String> _normalizeRoles(List<String> roles) {
+    return roles.map(_normalizeRole).toList();
+  }
+
   /// Non-null when the role was just changed by a realtime update.
   /// Widgets can read this once and call [clearRoleChangeMessage] to
   /// acknowledge it (e.g. after showing a snackbar).
@@ -91,16 +138,17 @@ class AuthProvider with ChangeNotifier {
   // ── Role Parsing ──────────────────────────────
 
   /// Extract roles from the JWT payload, or fall back to [role] as a single-element list.
+  /// Normalizes 'CUSTOMER' to 'USER' for consistency.
   List<String> _parseRolesFromToken() {
     if (_token == null) return ['USER'];
     try {
       final decoded = JwtDecoder.decode(_token!);
       final raw = decoded['roles'];
       if (raw is List) {
-        return raw.map((e) => e.toString()).toList();
+        return _normalizeRoles(raw.map((e) => e.toString()).toList());
       }
     } catch (_) {}
-    if (_role != null) return [_role!];
+    if (_role != null) return [_normalizeRole(_role!)];
     return ['USER'];
   }
 
@@ -159,11 +207,11 @@ class AuthProvider with ChangeNotifier {
         //
         // Preserve existing `_roles` in that case, falling back to the
         // primary `role` only when even that is missing.
-        final resolvedRole = latestRole ?? _role ?? 'USER';
+        final resolvedRole = _normalizeRole(latestRole ?? _role ?? 'USER');
         final resolvedUsername = latestUsername ?? _username ?? 'User';
         final List<String> latestRoles;
         if (latestRolesRaw is List) {
-          latestRoles = latestRolesRaw.map((e) => e.toString()).toList();
+          latestRoles = _normalizeRoles(latestRolesRaw.map((e) => e.toString()).toList());
         } else {
           latestRoles = List<String>.from(_roles);
         }
@@ -199,8 +247,20 @@ class AuthProvider with ChangeNotifier {
   /// Handle a detected roles/role change from either Realtime or polling.
   void _onRolesChanged(List<String> latestRoles, String latestRole, String latestUsername) {
     final oldRole = _activeRole;
-    _roles = latestRoles;
-    _role = latestRole;
+
+    // ── Ensure the primary role is always in the roles array ──
+    // The database `roles` column may be out of sync with the `role` column
+    // (e.g. `role = 'DELIVERY_BOY'` but `roles = ['CUSTOMER']`). If the
+    // primary role isn't in the array, add it so the user doesn't lose it.
+    final normalizedPrimary = _normalizeRole(latestRole);
+    var mergedRoles = _normalizeRoles(latestRoles);
+    if (!mergedRoles.contains(normalizedPrimary)) {
+      mergedRoles = [normalizedPrimary, ...mergedRoles];
+      debugPrint('[RT] 🔧 Added primary role "$normalizedPrimary" to roles → $mergedRoles');
+    }
+
+    _roles = mergedRoles;
+    _role = normalizedPrimary;
     _username = latestUsername;
 
     debugPrint('[RT] 🚀 Roles changed! $_roles (active: $oldRole)');
@@ -283,7 +343,7 @@ class AuthProvider with ChangeNotifier {
       try {
         final rows = await SupabaseClientService.client
             .from('users')
-            .select('role, username, roles')
+            .select('role, username, roles, avatar_url')
             .eq('id', userId)
             .limit(1);
 
@@ -292,12 +352,14 @@ class AuthProvider with ChangeNotifier {
           return;
         }
 
-        final latestRole = (rows.first)['role']?.toString() ?? 'USER';
+        final latestRole = _normalizeRole(
+            (rows.first)['role']?.toString() ?? 'USER');
         final latestUsername = (rows.first)['username']?.toString() ?? 'User';
         final latestRolesRaw = rows.first['roles'];
         final List<String> latestRoles;
         if (latestRolesRaw is List) {
-          latestRoles = latestRolesRaw.map((e) => e.toString()).toList();
+          latestRoles = _normalizeRoles(
+              latestRolesRaw.map((e) => e.toString()).toList());
         } else {
           // Poll always selects 'roles' explicitly, but guard nonetheless
           latestRoles = List<String>.from(_roles);
@@ -306,9 +368,16 @@ class AuthProvider with ChangeNotifier {
         if (_roles.toString() != latestRoles.toString() || _username != latestUsername) {
           debugPrint('[RT] 📟 Poll detected roles change! $_roles → $latestRoles');
 
+          // ── Same normalization as _onRolesChanged ──
+          final normalizedPrimary = _normalizeRole(latestRole);
+          var mergedRoles = _normalizeRoles(latestRoles);
+          if (!mergedRoles.contains(normalizedPrimary)) {
+            mergedRoles = [normalizedPrimary, ...mergedRoles];
+          }
+
           final oldActiveRole = _activeRole;
-          _roles = latestRoles;
-          _role = latestRole;
+          _roles = mergedRoles;
+          _role = normalizedPrimary;
           _username = latestUsername;
 
           if (!_roles.contains(_activeRole)) {
@@ -379,23 +448,34 @@ class AuthProvider with ChangeNotifier {
         if (currentUser != null) {
           final rows = await SupabaseClientService.client
               .from('users')
-              .select('username, role, roles')
+              .select('username, email, phone, role, roles, avatar_url')
               .eq('id', currentUser.id)
               .limit(1);
 
           if (rows.isNotEmpty) {
-            final latestRole = (rows.first)['role']?.toString() ?? 'USER';
+            final latestRole = _normalizeRole(
+                (rows.first)['role']?.toString() ?? 'USER');
             final latestUsername =
                 (rows.first)['username']?.toString() ?? 'User';
-            final latestRolesRaw = rows.first['roles'];
-            if (latestRolesRaw is List) {
-              _roles = latestRolesRaw.map((e) => e.toString()).toList();
-            } else {
-              _roles = [latestRole];
-            }
+            final latestEmail =
+                (rows.first)['email']?.toString();
+            final latestPhone =
+                (rows.first)['phone']?.toString();
+            final latestRolesRaw = rows.first['roles'];          if (latestRolesRaw is List) {
+            _roles = _normalizeRoles(latestRolesRaw.map((e) => e.toString()).toList());
+          } else {
+            _roles = [latestRole];
+          }
+
+          // ── Same normalization as _onRolesChanged ──
+          if (!_roles.contains(_role)) {
+            _roles = [_role!, ..._roles];
+          }
 
             _role = latestRole;
             _username = latestUsername;
+            _email = _cleanEmail(latestEmail);
+            _phone = latestPhone;
             _avatarUrl = rows.first['avatar_url']?.toString();
 
             // Resolve active role
@@ -404,10 +484,21 @@ class AuthProvider with ChangeNotifier {
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('user_role', latestRole);
             await prefs.setString('username', latestUsername);
+            await prefs.setString('email', _email ?? '');
+            await prefs.setString('phone', latestPhone ?? '');
             await prefs.setStringList('user_roles', _roles);
             await prefs.setString('active_role', _activeRole);
             if (_avatarUrl != null) {
               await prefs.setString('avatar_url', _avatarUrl!);
+            }
+          }
+
+          // Ensure phone is loaded from SharedPreferences if not available from DB
+          if (_phone == null || _phone!.isEmpty) {
+            final prefs = await SharedPreferences.getInstance();
+            final cachedPhone = prefs.getString('phone');
+            if (cachedPhone != null && cachedPhone.isNotEmpty) {
+              _phone = cachedPhone;
             }
           }
 
@@ -426,6 +517,8 @@ class AuthProvider with ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         _role = prefs.getString('user_role');
         _username = prefs.getString('username');
+        _email = _cleanEmail(prefs.getString('email'));
+        _phone = prefs.getString('phone');
         _avatarUrl = prefs.getString('avatar_url');
         final savedRoles = prefs.getStringList('user_roles');
         if (savedRoles != null && savedRoles.isNotEmpty) {
@@ -437,6 +530,8 @@ class AuthProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _role = prefs.getString('user_role');
       _username = prefs.getString('username');
+      _email = _cleanEmail(prefs.getString('email'));
+      _phone = prefs.getString('phone');
       _avatarUrl = prefs.getString('avatar_url');
       final savedRoles = prefs.getStringList('user_roles');
       if (savedRoles != null && savedRoles.isNotEmpty) {
@@ -449,7 +544,7 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login(String token, String role, String username, {List<String>? roles, String? avatarUrl}) async {
+  Future<void> login(String token, String role, String username, {List<String>? roles, String? avatarUrl, String? email, String? phone}) async {
     String? userId;
     try {
       final decoded = JwtDecoder.decode(token);
@@ -458,11 +553,14 @@ class AuthProvider with ChangeNotifier {
 
     userId ??= SupabaseClientService.client.auth.currentUser?.id;
 
+    final normalizedRole = _normalizeRole(role);
     _token = token;
-    _role = role;
+    _role = normalizedRole;
     _username = username;
-    _roles = roles ?? [role];
-    _activeRole = role;
+    _email = _cleanEmail(email);
+    _phone = phone;
+    _roles = roles != null ? _normalizeRoles(roles) : [normalizedRole];
+    _activeRole = normalizedRole;
     _avatarUrl = avatarUrl;
 
     await _secureStorage.write(key: 'jwt_token', value: token);
@@ -473,11 +571,10 @@ class AuthProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_role', role);
     await prefs.setString('username', username);
+    await prefs.setString('email', email ?? '');
+    await prefs.setString('phone', phone ?? '');
     await prefs.setStringList('user_roles', _roles);
     await prefs.setString('active_role', _activeRole);
-    if (_avatarUrl != null) {
-      await prefs.setString('avatar_url', _avatarUrl!);
-    }
     if (_avatarUrl != null) {
       await prefs.setString('avatar_url', _avatarUrl!);
     }
@@ -543,7 +640,7 @@ class AuthProvider with ChangeNotifier {
 
       final rows = await SupabaseClientService.client
           .from('users')
-          .select('username, role')
+          .select('username, role, roles, phone, email, avatar_url')
           .eq('id', sbUser.id)
           .limit(1);
 
@@ -556,7 +653,25 @@ class AuthProvider with ChangeNotifier {
         final displayName = (rows.first)['username']?.toString() ??
             googleUser.displayName ??
             'User';
-        await login(backendToken, userRole, displayName);
+        final profileRoles = (rows.first)['roles'];
+        final profilePhone = (rows.first)['phone']?.toString();
+        final profileEmail = (rows.first)['email']?.toString();
+        final profileAvatar = (rows.first)['avatar_url']?.toString();
+        final List<String> allRoles;
+        if (profileRoles is List) {
+          allRoles = profileRoles.map((e) => e.toString()).toList();
+        } else {
+          allRoles = [userRole];
+        }
+        await login(
+          backendToken,
+          userRole,
+          displayName,
+          roles: allRoles,
+          phone: profilePhone,
+          email: profileEmail,
+          avatarUrl: profileAvatar,
+        );
         return {
           'success': true,
           'requires_profile_completion': false,
@@ -591,7 +706,7 @@ class AuthProvider with ChangeNotifier {
         username: username,
       );
       if (response.token.isNotEmpty) {
-        await login(response.token, 'USER', username);
+        await login(response.token, 'USER', username, phone: phone);
         return;
       }
     }
@@ -607,7 +722,7 @@ class AuthProvider with ChangeNotifier {
         'status': 'ACTIVE',
       });
     }
-    await login(token, 'USER', username, roles: ['USER']);
+    await login(token, 'USER', username, roles: ['USER'], phone: phone);
   }
 
   Future<void> logout() async {
