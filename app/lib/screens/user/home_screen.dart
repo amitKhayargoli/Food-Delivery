@@ -1122,8 +1122,8 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
   Widget _buildRestaurantHorizontalList(
     BuildContext context, {
     required List<Restaurant> restaurants,
-    required Map<String, String> discounts,
   }) {
+    if (restaurants.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: 230,
       child: ListView.separated(
@@ -1133,11 +1133,9 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
         separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final restaurant = restaurants[index];
-          final discount = discounts[restaurant.id];
           return _buildRestaurantCard(
             context,
             restaurant: restaurant,
-            discount: discount,
           );
         },
       ),
@@ -1151,7 +1149,6 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
   Widget _buildRestaurantCard(
     BuildContext context, {
     required Restaurant restaurant,
-    String? discount,
   }) {
     return GestureDetector(
       onTap: () {
@@ -1196,31 +1193,30 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                     ),
                   ),
                 ),
-                if (discount != null)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                Positioned(
+                  left: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFF5222D),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      decoration: ShapeDecoration(
-                        color: const Color(0xFFF5222D),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      child: Text(
-                        discount,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    ),
+                    child: Text(
+                      '${restaurant.deliveryTimeMinutes} mins',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
+                ),
                 // Favorite button
                 Positioned(
                   right: 6,

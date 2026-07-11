@@ -67,9 +67,12 @@ export const uploadFile = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Generate a unique file name
+    // If a custom path is provided (e.g. 'logos/my_logo.jpg'), use it;
+    // otherwise default to userId_timestamp.ext
     const ext = req.file.originalname.split('.').pop()?.toLowerCase() || 'jpg';
     const timestamp = Date.now();
-    const fileName = `${userId}_${timestamp}.${ext}`;
+    const customPath = req.body.path as string | undefined;
+    const fileName = customPath ?? `${userId}_${timestamp}.${ext}`;
     const contentType = MIME_MAP[ext] || req.file.mimetype || 'application/octet-stream';
 
     // Upload using service_role client (bypasses RLS)

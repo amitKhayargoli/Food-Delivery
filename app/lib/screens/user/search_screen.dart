@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/mock_data.dart';
 import '../../models/models.dart';
 import '../../state_providers.dart';
 import '../../widgets/delivery_location_header.dart';
@@ -51,6 +50,19 @@ class SearchFilters {
   }
 }
 
+/// A simple category derived from restaurant cuisine types
+class CuisineCategory {
+  final String id;
+  final String name;
+  final String imageUrl;
+
+  const CuisineCategory({
+    required this.id,
+    required this.name,
+    this.imageUrl = '',
+  });
+}
+
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -64,9 +76,99 @@ class _SearchScreenState extends State<SearchScreen> {
   String _searchQuery = '';
   SearchFilters _filters = const SearchFilters();
 
-  // ── Recent Searches (max 8, most recent first, deduped) ──
+  // API data state
+  List<Restaurant> _allRestaurants = [];
+  List<CuisineCategory> _cuisineCategories = [];
+  bool _isLoading = true;
+  String? _error;
+
+  // ── Recent Searches ──
   static const int _maxRecentSearches = 8;
   List<String> _recentSearches = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRestaurants();
+  }
+
+  Future<void> _fetchRestaurants() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final raw = await api.getRestaurants();
+      final restaurants = raw.map((r) => Restaurant.fromJson(r)).toList();
+
+      // Derive cuisine categories from restaurant cuisine types
+      final cuisineSet = <String>{};
+      for (final r in restaurants) {
+        if (r.cuisineType != null && r.cuisineType!.isNotEmpty) {
+          for (final type in r.cuisineType!.split(',')) {
+            final trimmed = type.trim();
+            if (trimmed.isNotEmpty) {
+              cuisineSet.add(trimmed);
+            }
+          }
+        }
+      }
+
+      final cuisines = cuisineSet.toList()..sort();
+      final categories = cuisines.asMap().entries.map((entry) {
+        return CuisineCategory(
+          id: 'cuisine_${entry.key}',
+          name: entry.value,
+          imageUrl: _cuisineImageFor(entry.value),
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _allRestaurants = restaurants;
+          _cuisineCategories = categories;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load restaurants. Pull down to retry.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Map cuisine type names to Unsplash images for the category circles
+  String _cuisineImageFor(String cuisine) {
+    final lower = cuisine.toLowerCase();
+    if (lower.contains('burger')) {
+      return 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('pizza') || lower.contains('italian')) {
+      return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('momo') || lower.contains('nepali')) {
+      return 'https://images.unsplash.com/photo-1626804475297-4160ebea14ee?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('dessert') || lower.contains('sweet')) {
+      return 'https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('juice') || lower.contains('drink')) {
+      return 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('indian')) {
+      return 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=200&q=80';
+    }
+    if (lower.contains('continental') || lower.contains('grill') || lower.contains('steak')) {
+      return 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=200&q=80';
+    }
+    // Default food image
+    return 'https://images.unsplash.com/photo-1496116218417-1a781b1c416c?auto=format&fit=crop&w=200&q=80';
+  }
 
   void _addRecentSearch(String query) {
     if (query.trim().isEmpty) return;
@@ -106,9 +208,8 @@ class _SearchScreenState extends State<SearchScreen> {
       final query = _searchQuery.toLowerCase();
       filtered = filtered.where((r) {
         if (r.name.toLowerCase().contains(query)) return true;
-        if (r.foods.any((f) => f.name.toLowerCase().contains(query))) {
-          return true;
-        }
+        if (r.cuisineType?.toLowerCase().contains(query) ?? false) return true;
+        if (r.description.toLowerCase().contains(query)) return true;
         return false;
       }).toList();
     }

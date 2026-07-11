@@ -392,6 +392,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   List<Order> get _readyOrders =>
       _allOrders.where((o) => o.status == OrderStatus.outForDelivery).toList();
 
+  List<Order> get _outForDeliveryOrders =>
+      _allOrders.where((o) => o.status == OrderStatus.pickedUp).toList();
+
+  List<Order> get _deliveredOrders =>
+      _allOrders.where((o) => o.status == OrderStatus.delivered).toList();
+
   List<Order> get _currentOrders {
     if (_isSearching) return _searchResults;
     switch (_selectedTab) {
@@ -399,6 +405,65 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       case 1: return _preparingOrders;
       case 2: return _readyOrders;
       default: return []; // Problems handled separately
+    }
+  }
+
+  // ── Accepting orders status ──────────────────
+
+  Future<void> _fetchAcceptingStatus() async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final profile = await api.getMyRestaurantProfile(token: token);
+      if (profile != null && mounted) {
+        setState(() {
+          _isAcceptingOrders = profile['is_accepting_orders'] as bool? ?? true;
+        });
+      }
+    } catch (_) {
+      // Silently fail — default to accepting
+    }
+  }
+
+  Future<void> _toggleAcceptingOrders(bool value) async {
+    final token = _token;
+    if (token == null || _isToggling) return;
+
+    // Optimistic update
+    setState(() {
+      _isAcceptingOrders = value;
+      _isToggling = true;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.toggleAcceptingOrders(isAccepting: value, token: token);
+    } on ApiException catch (e) {
+      // Revert on failure
+      if (mounted) {
+        setState(() {
+          _isAcceptingOrders = !value;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isAcceptingOrders = !value;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isToggling = false);
+      }
     }
   }
 
@@ -1080,7 +1145,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             final isActive = _selectedTab == index;
 
             return GestureDetector(
-              onTap: () => setState(() => _selectedTab = index),
+              onTap: () {
+                setState(() => _selectedTab = index);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -1266,7 +1333,21 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         itemCount: _currentOrders.length,
-        itemBuilder: (context, index) => _buildOrderCard(_currentOrders[index]),
+        itemBuilder: (context, index) => GestureDetector(
+          onTap: () async {
+            final changed = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => OrderDetailScreen(
+                  order: _currentOrders[index],
+                ),
+              ),
+            );
+            if (changed == true && mounted) {
+              _fetchOrders();
+            }
+          },
+          child: _buildOrderCard(_currentOrders[index]),
+        ),
       ),
     );
   }
