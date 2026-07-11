@@ -132,14 +132,34 @@ export async function sendPushNotification(
 /**
  * Send a push notification to all device tokens associated with a user.
  * Tokens are stored in the `device_tokens` table keyed by user_id.
+ *
+ * @param role - The intended target role for the notification (e.g. 'customer', 'owner', 'rider', 'admin').
+ *               Used to filter notifications so users with multiple roles only see relevant ones.
+ *               Defaults to 'customer'.
  */
 export async function notifyUser(
   userId: string,
   supabaseAdmin: any,
   payload: { title: string; body: string; data?: Record<string, string> },
+  role: string = 'customer',
 ): Promise<void> {
   try {
-    // Fetch all active device tokens for this user
+    // ── Store in-app notification ──
+    try {
+      await supabaseAdmin.from('notifications').insert({
+        user_id: userId,
+        title: payload.title,
+        body: payload.body,
+        type: payload.data?.type || 'general',
+        data: payload.data || {},
+        role,
+      });
+    } catch (dbError) {
+      console.error('[FCM] Failed to store notification:', (dbError as Error).message);
+      // Non-blocking — push can still be sent
+    }
+
+    // ── Send push notifications to device tokens ──
     const { data: tokens, error } = await supabaseAdmin
       .from('device_tokens')
       .select('token')

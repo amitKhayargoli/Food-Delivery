@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { supabase } from '../db/supabase';
 import { getUserId } from '../utils/auth';
+import { notifyUser } from '../services/fcm.service';
 
 // ──────────────────────────────────────────────
 // POST /api/ratings
@@ -69,6 +70,37 @@ export const submitRating = async (req: Request, res: Response): Promise<void> =
       res.status(500).json({ error: 'Failed to submit rating.' });
       return;
     }
+
+    // ── Notify rider: "You received a new rating!" ──
+    // Fire-and-forget — don't block the response
+    (async () => {
+      try {
+        // Fetch customer name for the notification body
+        const { data: customer } = await supabase.admin
+          .from('users')
+          .select('username')
+          .eq('id', userId)
+          .maybeSingle();
+
+        const customerName = customer?.username || 'A customer';
+
+        const stars = '⭐'.repeat(rating);
+        notifyUser(rider_id, supabase.admin, {
+          title: 'New Rating Received! ⭐',
+          body: `${customerName} rated you ${rating}/5 ${stars}`,
+          data: {
+            type: 'rating_received',
+            order_id,
+            rating,
+            comment: comment || null,
+          },
+        }, 'rider').catch((err: any) =>
+          console.error('[Ratings] FCM notification failed:', err?.message),
+        );
+      } catch (notifError) {
+        console.error('[Ratings] Fetch customer name failed:', notifError);
+      }
+    })();
 
     res.status(201).json({
       message: 'Rating submitted successfully.',

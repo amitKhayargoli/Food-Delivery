@@ -37,11 +37,26 @@ export const createConversation = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Look up restaurant_id from the order (if order_id is provided)
+    let restaurantId: string | null = null;
+    if (order_id) {
+      const { data: order } = await supabase.admin
+        .from('orders')
+        .select('restaurant_id')
+        .eq('id', order_id)
+        .maybeSingle();
+
+      if (order) {
+        restaurantId = order.restaurant_id;
+      }
+    }
+
     const { data: conversation, error } = await supabase.admin
       .from('support_conversations')
       .insert({
         user_id: userId,
         order_id: order_id || null,
+        restaurant_id: restaurantId,
         subject: subject.trim(),
         status: 'OPEN',
         created_at: new Date().toISOString(),
@@ -56,7 +71,25 @@ export const createConversation = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Notify admin users about the new conversation
+    // Notify the relevant users about the new conversation
+    if (restaurantId) {
+      // Notify the specific restaurant owner
+      const { data: restaurant } = await supabase.admin
+        .from('restaurant_applications')
+        .select('user_id')
+        .eq('id', restaurantId)
+        .maybeSingle();
+
+      if (restaurant?.user_id) {
+        notifyUser(restaurant.user_id, supabase.admin, {
+          title: 'New Support Request 📩',
+          body: `New conversation: ${subject}`,
+          data: { type: 'support_new', conversation_id: conversation.id },
+        }, 'owner').catch(() => {});
+      }
+    }
+
+    // Also notify all admins
     const { data: admins } = await supabase.admin
       .from('users')
       .select('id')
@@ -68,7 +101,7 @@ export const createConversation = async (req: Request, res: Response): Promise<v
           title: 'New Support Request 📩',
           body: `New conversation: ${subject}`,
           data: { type: 'support_new', conversation_id: conversation.id },
-        }).catch(() => {});
+        }, 'admin').catch(() => {});
       }
     }
 
@@ -146,8 +179,8 @@ export const getMyConversations = async (req: Request, res: Response): Promise<v
 export const getAllConversations = async (req: Request, res: Response): Promise<void> => {
   try {
     const role = getUserRole(req);
-    if (role !== 'ADMIN') {
-      res.status(403).json({ error: 'Admin access required.' });
+    if (role !== 'ADMIN' && role !== 'RESTAURANT_OWNER') {
+      res.status(403).json({ error: 'Support agent access required.' });
       return;
     }
 
@@ -157,6 +190,25 @@ export const getAllConversations = async (req: Request, res: Response): Promise<
       .from('support_conversations')
       .select('*')
       .order('updated_at', { ascending: false });
+
+    // For restaurant owners, only show conversations for their restaurant
+    if (role === 'RESTAURANT_OWNER') {
+      const userId = await getUserId(req);
+      const { data: application } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'APPROVED')
+        .maybeSingle();
+
+      if (application) {
+        query = query.eq('restaurant_id', application.id);
+      } else {
+        // Owner has no approved restaurant — return empty
+        res.status(200).json({ conversations: [] });
+        return;
+      }
+    }
 
     if (status === 'OPEN' || status === 'CLOSED') {
       query = query.eq('status', status);
@@ -236,11 +288,11 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
 
     const { id } = req.params;
 
-    // Verify the user owns this conversation or is admin
+    // Verify the user owns this conversation or is a support agent
     const role = getUserRole(req);
     const { data: conversation } = await supabase.admin
       .from('support_conversations')
-      .select('user_id')
+      .select('user_id, restaurant_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -249,7 +301,23 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    if (conversation.user_id !== userId && role !== 'ADMIN') {
+    // Conversation owner or admin can always access
+    if (conversation.user_id === userId || role === 'ADMIN') {
+      // allowed
+    } else if (role === 'RESTAURANT_OWNER') {
+      // Restaurant owner must own the restaurant tied to this conversation
+      const { data: application } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id')
+        .eq('id', conversation.restaurant_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!application) {
+        res.status(403).json({ error: 'Access denied. You do not own this restaurant.' });
+        return;
+      }
+    } else {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
@@ -266,8 +334,8 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Mark admin messages as read if the current user is not an admin
-    if (role !== 'ADMIN') {
+    // Mark admin/owner messages as read if the current user is a regular user (not support agent)
+    if (role !== 'ADMIN' && role !== 'RESTAURANT_OWNER') {
       const unreadIds = (messages || [])
         .filter((m: any) => m.sender_role === 'ADMIN' && !m.is_read)
         .map((m: any) => m.id);
@@ -311,7 +379,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const role = getUserRole(req);
     const { data: conversation } = await supabase.admin
       .from('support_conversations')
-      .select('user_id, status')
+      .select('user_id, status, restaurant_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -325,13 +393,29 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Only the conversation owner or admin can send messages
-    if (conversation.user_id !== userId && role !== 'ADMIN') {
+    // Only the conversation owner or support agents can send messages
+    const isSupportAgent = role === 'ADMIN' || role === 'RESTAURANT_OWNER';
+    if (conversation.user_id !== userId && !isSupportAgent) {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
 
-    const senderRole = role === 'ADMIN' ? 'ADMIN' : 'USER';
+    // Restaurant owner must own the restaurant for this conversation
+    if (role === 'RESTAURANT_OWNER' && conversation.user_id !== userId) {
+      const { data: application } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id')
+        .eq('id', conversation.restaurant_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!application) {
+        res.status(403).json({ error: 'You do not own this restaurant.' });
+        return;
+      }
+    }
+
+    const senderRole = isSupportAgent ? 'ADMIN' : 'USER';
 
     const { data: msg, error } = await supabase.admin
       .from('support_messages')
@@ -367,7 +451,24 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         data: { type: 'support_reply', conversation_id: id },
       }).catch(() => {});
     } else {
-      // Notify all admins
+      // Notify the restaurant owner for this conversation (if restaurant-linked)
+      if (conversation.restaurant_id) {
+        const { data: restaurant } = await supabase.admin
+          .from('restaurant_applications')
+          .select('user_id')
+          .eq('id', conversation.restaurant_id)
+          .maybeSingle();
+
+        if (restaurant?.user_id) {
+          notifyUser(restaurant.user_id, supabase.admin, {
+            title: 'New Support Message 💬',
+            body: `New message: ${message.trim().substring(0, 80)}`,
+            data: { type: 'support_message', conversation_id: id },
+          }, 'owner').catch(() => {});
+        }
+      }
+
+      // Also notify all admins
       const { data: admins } = await supabase.admin
         .from('users')
         .select('id')
@@ -379,7 +480,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
             title: 'New Support Message 💬',
             body: `New message: ${message.trim().substring(0, 80)}`,
             data: { type: 'support_message', conversation_id: id },
-          }).catch(() => {});
+          }, 'admin').catch(() => {});
         }
       }
     }
@@ -410,7 +511,7 @@ export const closeConversation = async (req: Request, res: Response): Promise<vo
 
     const { data: conversation, error: fetchError } = await supabase.admin
       .from('support_conversations')
-      .select('user_id')
+      .select('user_id, restaurant_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -420,7 +521,24 @@ export const closeConversation = async (req: Request, res: Response): Promise<vo
     }
 
     const role = getUserRole(req);
-    if (conversation.user_id !== userId && role !== 'ADMIN') {
+
+    // Conversation owner or admin can always close
+    if (conversation.user_id === userId || role === 'ADMIN') {
+      // allowed
+    } else if (role === 'RESTAURANT_OWNER') {
+      // Restaurant owner must own the restaurant
+      const { data: application } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id')
+        .eq('id', conversation.restaurant_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!application) {
+        res.status(403).json({ error: 'You do not own this restaurant.' });
+        return;
+      }
+    } else {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }

@@ -76,22 +76,6 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
             const Text('Tell us what you need help with:',
                 style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C))),
             const SizedBox(height: 12),
-            if (widget.orderNumber != null)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F5F5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF8E8E93)),
-                    const SizedBox(width: 6),
-                    Text('Order #${widget.orderNumber}',
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF5C5C5C))),
-                  ],
-                ),
-              ),
             const SizedBox(height: 12),
             TextField(
               controller: subjectCtrl,
@@ -116,18 +100,23 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
             child: const Text('Cancel',
                 style: TextStyle(color: Color(0xFF8E8E93))),
           ),
-          ElevatedButton(
-            onPressed: subjectCtrl.text.trim().isEmpty
-                ? null
-                : () => Navigator.pop(ctx, subjectCtrl.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFBB0018),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
+          // ListenableBuilder reactively enables/disables the Submit button
+          // as the user types, without needing StatefulBuilder or manual listeners.
+          ListenableBuilder(
+            listenable: subjectCtrl,
+            builder: (ctx, _) => ElevatedButton(
+              onPressed: subjectCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, subjectCtrl.text.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFBB0018),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              child: const Text('Submit',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
             ),
-            child: const Text('Submit',
-                style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),

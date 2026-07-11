@@ -88,6 +88,56 @@ export const submitProblem = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Auto-create a support conversation for this problem (if one doesn't exist)
+    const { data: existingConv } = await supabase.admin
+      .from('support_conversations')
+      .select('id')
+      .eq('order_id', order_id)
+      .maybeSingle();
+
+    if (!existingConv) {
+      const typeLabels: Record<string, string> = {
+        wrong_item: 'Wrong Item',
+        missing_item: 'Missing Item',
+        quality: 'Food Quality',
+        other: 'Other Issue',
+      };
+
+      const subject = `${typeLabels[issue_type] || issue_type} — Order #${order.order_number || ''}`;
+
+      const { data: newConv } = await supabase.admin
+        .from('support_conversations')
+        .insert({
+          user_id: userId,
+          order_id: order_id,
+          restaurant_id: order.restaurant_id,
+          subject: subject,
+          status: 'OPEN',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (newConv) {
+        // Insert the problem details as the first message in the chat
+        const problemText = description?.trim()
+          ? `[Problem: ${typeLabels[issue_type] || issue_type}] ${description.trim()}`
+          : `[Problem: ${typeLabels[issue_type] || issue_type}]`;
+
+        await supabase.admin
+          .from('support_messages')
+          .insert({
+            conversation_id: newConv.id,
+            sender_id: userId,
+            sender_role: 'USER',
+            message: problemText,
+            is_read: true,
+            created_at: new Date().toISOString(),
+          });
+      }
+    }
+
     // Notify the restaurant owner
     const { data: restaurant } = await supabase.admin
       .from('restaurant_applications')
@@ -106,7 +156,7 @@ export const submitProblem = async (req: Request, res: Response): Promise<void> 
         title: 'Problem Reported ⚠️',
         body: `Issue: ${typeLabels[issue_type] || issue_type} — Order #${order.order_number || ''}`,
         data: { type: 'problem_reported', problem_id: problem.id, order_id },
-      }).catch(() => {});
+      }, 'owner').catch(() => {});
     }
 
     res.status(201).json({

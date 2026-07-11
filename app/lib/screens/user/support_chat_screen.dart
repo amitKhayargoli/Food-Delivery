@@ -115,17 +115,25 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      try {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      } catch (_) {
+        // Silently handle edge case where controller is disposed
+        // during the post-frame callback.
       }
     });
   }
 
   Future<void> _sendMessage() async {
+    // Guard against rapid double-taps (onSubmitted + button press)
+    if (_isSending) return;
+
     final text = _messageCtrl.text.trim();
     if (text.isEmpty) return;
 
@@ -142,7 +150,6 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
         message: text,
         token: token,
       );
-      // Message will arrive via Realtime subscription
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSending = false);
@@ -150,6 +157,7 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
         const SnackBar(content: Text('Failed to send message.'),
             backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
       );
+      return;
     }
 
     if (!mounted) return;
@@ -396,7 +404,9 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                   Text(message,
                       style: TextStyle(
                           fontSize: 14,
-                          color: isAdmin ? const Color(0xFF1A1C1C) : Colors.white)),
+                          color: isAdmin ? const Color(0xFF1A1C1C) : Colors.white),
+                      maxLines: 20,
+                      overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
                   Text(time,
                       style: TextStyle(

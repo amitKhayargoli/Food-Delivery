@@ -157,7 +157,6 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     final status = report['status'] as String? ?? 'PENDING';
     final issueType = report['issue_type'] as String? ?? '';
     final description = report['description'] as String?;
-    final orderNumber = report['order_number'] as String? ?? '';
     final adminNote = report['admin_note'] as String?;
     final createdAt = report['created_at'] as String? ?? '';
 
@@ -268,7 +267,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Text('Order #$orderNumber',
+                        Text('Order',
                             style: const TextStyle(
                                 fontSize: 12, color: Color(0xFF1967D2),
                                 fontWeight: FontWeight.w500)),

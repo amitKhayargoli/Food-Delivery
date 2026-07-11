@@ -122,7 +122,7 @@ class _ReportProblemScreenState extends State<ReportProblemScreen> {
                     children: [
                       const Text('Order',
                           style: TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
-                      Text('#${widget.orderNumber}',
+                      const Text('Order',
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700,
                               color: Color(0xFF1A1C1C))),
