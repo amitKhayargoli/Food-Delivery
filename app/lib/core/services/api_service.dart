@@ -668,42 +668,6 @@ class ApiService {
     }
   }
 
-  /// Toggle whether the restaurant is accepting new orders
-  Future<void> toggleAcceptingOrders({
-    required bool isAccepting,
-    required String token,
-  }) async {
-    try {
-      await _dio.patch(
-        '/restaurant-applications/my/accepting-orders',
-        data: {'is_accepting_orders': isAccepting},
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-    } on DioException catch (e) {
-      final message = _extractError(e);
-      throw ApiException(message);
-    }
-  }
-
-  /// Toggle automatic delivery boy assignment (auto-dispatch).
-  /// When enabled, the nearest available rider is automatically assigned
-  /// when an order is marked as Ready.
-  Future<void> toggleAutoDispatch({
-    required bool enabled,
-    required String token,
-  }) async {
-    try {
-      await _dio.patch(
-        '/restaurant-applications/my/auto-dispatch',
-        data: {'auto_dispatch_enabled': enabled},
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-    } on DioException catch (e) {
-      final message = _extractError(e);
-      throw ApiException(message);
-    }
-  }
-
   /// Fetch all orders (admin only). Returns delivered orders with
   /// restaurant names, rider info, and delivery photo status.
   Future<List<Map<String, dynamic>>> getAllOrders({required String token}) async {
@@ -827,8 +791,34 @@ class ApiService {
   }
 
   // ──────────────────────────────────────────────
-  //  Profile Avatar API
+  //  Profile API
   // ──────────────────────────────────────────────
+
+  /// Update the user's profile (username, email, phone).
+  Future<Map<String, dynamic>> updateProfile({
+    String? username,
+    String? email,
+    String? phone,
+    required String token,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (username != null) body['username'] = username;
+      if (email != null) body['email'] = email;
+      if (phone != null) body['phone'] = phone;
+
+      final response = await _dio.patch(
+        '/profile',
+        data: body,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['user'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
 
   /// Update the user's avatar URL on the backend profile.
   Future<void> updateAvatarUrl({
@@ -1531,6 +1521,265 @@ class ApiService {
     }
   }
 
+  // ──────────────────────────────────────────────
+  //  In-App Notifications API
+  // ──────────────────────────────────────────────
+
+  /// Fetch in-app notifications for the authenticated user.
+  /// Optionally filter by `role` so users with multiple roles only see
+  /// notifications relevant to their currently active role.
+  Future<Map<String, dynamic>> getNotifications({
+    required String token,
+    int limit = 50,
+    int offset = 0,
+    bool unreadOnly = false,
+    String? role,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/notifications',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+          if (unreadOnly) 'unread': 'true',
+          if (role != null) 'role': role,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Mark a single notification as read.
+  Future<void> markNotificationAsRead({
+    required String notificationId,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/notifications/$notificationId/read',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Mark all notifications as read.
+  Future<void> markAllNotificationsAsRead({required String token}) async {
+    try {
+      await _dio.post(
+        '/notifications/read-all',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Restaurant Reviews API
+  // ──────────────────────────────────────────────
+
+  /// Submit a review for a restaurant.
+  Future<Map<String, dynamic>> submitRestaurantReview({
+    required String restaurantId,
+    required int rating,
+    String? comment,
+    List<String>? images,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/reviews',
+        data: {
+          'restaurant_id': restaurantId,
+          'rating': rating,
+          if (comment != null) 'comment': comment,
+          if (images != null && images.isNotEmpty) 'images': images,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['review'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Get all reviews for a restaurant.
+  Future<List<Map<String, dynamic>>> getRestaurantReviews({
+    required String restaurantId,
+  }) async {
+    try {
+      final response = await _dio.get('/reviews/restaurant/$restaurantId');
+      final data = response.data as Map<String, dynamic>;
+      final reviews = data['reviews'] as List<dynamic>? ?? [];
+      return reviews.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Get reviews submitted by the authenticated user.
+  Future<List<Map<String, dynamic>>> getMyRestaurantReviews({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/reviews/my',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final reviews = data['reviews'] as List<dynamic>? ?? [];
+      return reviews.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Get reviews for the owner's restaurant.
+  Future<Map<String, dynamic>> getOwnerRestaurantReviews({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/reviews/owner',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Update a review.
+  Future<Map<String, dynamic>> updateRestaurantReview({
+    required String reviewId,
+    int? rating,
+    String? comment,
+    List<String>? images,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/reviews/$reviewId',
+        data: {
+          if (rating != null) 'rating': rating,
+          if (comment != null) 'comment': comment,
+          if (images != null) 'images': images,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as Map<String, dynamic>;
+      return data['review'] as Map<String, dynamic>? ?? {};
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Delete a review.
+  Future<void> deleteRestaurantReview({
+    required String reviewId,
+    required String token,
+  }) async {
+    try {
+      await _dio.delete(
+        '/reviews/$reviewId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Rider Application API
+  // ──────────────────────────────────────────────
+
+  /// Submit a delivery partner (rider) application.
+  Future<RiderApplicationResponse> submitRiderApplication({
+    required String fullName,
+    required String email,
+    required String phone,
+    required String vehicleType,
+    required String vehicleNumber,
+    required String licenseUrl,
+    String? profileImageUrl,
+    required String token,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/riders/apply',
+        data: {
+          'full_name': fullName,
+          'email': email,
+          'phone': phone,
+          'vehicle_type': vehicleType,
+          'vehicle_number': vehicleNumber,
+          'license_url': licenseUrl,
+          if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final app = data['application'] as Map<String, dynamic>?;
+      return RiderApplicationResponse(
+        message: data['message'] as String? ?? '',
+        applicationId: app?['id'] as String?,
+        status: app?['status'] as String? ?? 'PENDING',
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Rider Application Admin API
+  // ──────────────────────────────────────────────
+
+  /// Get all rider applications (admin only).
+  Future<List<Map<String, dynamic>>> getAllRiderApplications({required String token}) async {
+    try {
+      final response = await _dio.get(
+        '/riders/apply',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = response.data as List<dynamic>? ?? [];
+      return data.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
+  /// Update a rider application's status (APPROVED / REJECTED).
+  Future<void> updateRiderApplicationStatus({
+    required String applicationId,
+    required String status,
+    required String token,
+  }) async {
+    try {
+      await _dio.patch(
+        '/riders/apply/$applicationId/status',
+        data: {'status': status},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      final message = _extractError(e);
+      throw ApiException(message);
+    }
+  }
+
   /// Extract error message from DioException
   String _extractError(DioException e) {
     if (e.response?.data is Map<String, dynamic>) {
@@ -1686,6 +1935,18 @@ class CouponValidateResponse {
       description: c['description'] as String?,
     );
   }
+}
+
+class RiderApplicationResponse {
+  final String message;
+  final String? applicationId;
+  final String status;
+
+  RiderApplicationResponse({
+    required this.message,
+    this.applicationId,
+    required this.status,
+  });
 }
 
 /// Response from GET /api/home/suggestions

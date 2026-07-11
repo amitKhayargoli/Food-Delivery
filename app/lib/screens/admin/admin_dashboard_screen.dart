@@ -47,6 +47,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _isLoadingOrders = false;
   String? _ordersFilter;
 
+  // Rider Applications tab
+  List<Map<String, dynamic>> _riderApplications = [];
+  bool _isLoadingApplications = true;
+  String? _applicationsError;
+
   // Support tab
   List<Map<String, dynamic>> _supportConversations = [];
   bool _isLoadingSupport = false;
@@ -54,10 +59,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _fetchRiders();
     _fetchPerformance();
     _fetchDeliveredOrders();
+    _fetchRiderApplications();
     _fetchSupportConversations();
   }
 
@@ -216,6 +222,174 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
+  /// Fetch all pending rider applications for admin review.
+  Future<void> _fetchRiderApplications() async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() {
+      _isLoadingApplications = true;
+      _applicationsError = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final apps = await api.getAllRiderApplications(token: token);
+      if (!mounted) return;
+      setState(() {
+        _riderApplications = apps;
+        _isLoadingApplications = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _applicationsError = e.message;
+        _isLoadingApplications = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _applicationsError = 'Failed to load applications.';
+        _isLoadingApplications = false;
+      });
+    }
+  }
+
+  /// Approve a rider application.
+  Future<void> _approveRiderApplication(Map<String, dynamic> app) async {
+    final token = _token;
+    if (token == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Approve Rider'),
+        content: Text(
+          'Approve "${app['full_name'] as String? ?? 'Unknown'}" as a delivery partner?\n\n'
+          'They will receive rider access and be able to accept delivery jobs.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Approve',
+              style: TextStyle(color: Color(0xFF1E8E3E)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.updateRiderApplicationStatus(
+        applicationId: app['id'] as String,
+        status: 'APPROVED',
+        token: token,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('${app['full_name']} approved as delivery partner!'),
+          backgroundColor: const Color(0xFF1E8E3E),
+        ),
+      );
+      _fetchRiderApplications();
+      _fetchRiders();
+      _fetchPerformance();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: const Color(0xFFF5222D),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to approve application.'),
+          backgroundColor: Color(0xFFF5222D),
+        ),
+      );
+    }
+  }
+
+  /// Reject a rider application.
+  Future<void> _rejectRiderApplication(Map<String, dynamic> app) async {
+    final token = _token;
+    if (token == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reject Rider'),
+        content: Text(
+          'Reject "${app['full_name'] as String? ?? 'Unknown'}" as a delivery partner?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Reject',
+              style: TextStyle(color: Color(0xFFF5222D)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      await api.updateRiderApplicationStatus(
+        applicationId: app['id'] as String,
+        status: 'REJECTED',
+        token: token,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Application rejected.'),
+          backgroundColor: Color(0xFF8E8E93),
+        ),
+      );
+      _fetchRiderApplications();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: const Color(0xFFF5222D),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to reject application.'),
+          backgroundColor: Color(0xFFF5222D),
+        ),
+      );
+    }
+  }
+
   /// Fetch all support conversations for admin reply.
   Future<void> _fetchSupportConversations() async {
     final token = _token;
@@ -289,13 +463,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           labelColor: const Color(0xFFBB0018),
           unselectedLabelColor: const Color(0xFF8E8E93),
           labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [
-            Tab(text: 'Riders'),
-            Tab(text: 'Performance'),
-            Tab(text: 'Add Rider'),
-            Tab(text: 'Coupons'),
-            Tab(text: 'Orders'),
-            Tab(text: 'Support'),
+          tabs: [
+            const Tab(text: 'Riders'),
+            const Tab(text: 'Performance'),
+            const Tab(text: 'Add Rider'),
+            const Tab(text: 'Coupons'),
+            const Tab(text: 'Orders'),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Applications'),
+                  if (_riderApplications.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFBB0018),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${_riderApplications.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Tab(text: 'Support'),
           ],
         ),
       ),
@@ -307,6 +507,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           _buildAddRiderTab(),
           const AdminCouponManagementScreen(embedded: true),
           _buildOrdersTab(),
+          _buildRiderApplicationsTab(),
           _buildSupportTab(),
         ],
       ),
@@ -1374,8 +1575,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Order #${order.orderNumber}',
+                    const Text(
+                      'Order',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -1521,6 +1722,402 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Rider Applications Tab ──────────────────
+
+  Widget _buildRiderApplicationsTab() {
+    if (_isLoadingApplications) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text('Loading applications...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    if (_applicationsError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Color(0xFF8E8E93)),
+              const SizedBox(height: 16),
+              Text(_applicationsError!, textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _fetchRiderApplications,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFBB0018),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_riderApplications.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.person_add_disabled_outlined, size: 56, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text('No pending applications',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 16, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 4),
+            const Text('New delivery partner applications will appear here',
+                style: TextStyle(color: Color(0xFFBFBFBF), fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    // Applications count header
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFFBB0018), size: 22),
+              const SizedBox(width: 10),
+              Text(
+                '${_riderApplications.length} Pending Application${_riderApplications.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1C1C),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetchRiderApplications,
+            color: const Color(0xFFBB0018),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: _riderApplications.length,
+              itemBuilder: (context, index) {
+                final app = _riderApplications[index];
+                return _buildRiderApplicationCard(app);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRiderApplicationCard(Map<String, dynamic> app) {
+    final fullName = app['full_name'] as String? ?? 'Unknown';
+    final email = app['email'] as String? ?? '';
+    final phone = app['phone'] as String? ?? '';
+    final vehicleType = app['vehicle_type'] as String? ?? '';
+    final vehicleNumber = app['vehicle_number'] as String? ?? '';
+    final licenseUrl = app['license_url'] as String? ?? '';
+    final profileImageUrl = app['profile_image_url'] as String?;
+    final createdAt = app['created_at'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row with profile + name
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Avatar
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: const Color(0xFFFFF1F0),
+                foregroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+                    ? NetworkImage(profileImageUrl)
+                    : null,
+                child: profileImageUrl == null || profileImageUrl.isEmpty
+                    ? Text(
+                        fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Color(0xFFBB0018),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 14),
+              // Name + contact
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fullName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1C1C),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (email.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.email_outlined, size: 13, color: Color(0xFF8E8E93)),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                email,
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF5C5C5C)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (phone.isNotEmpty)
+                      Row(
+                        children: [
+                          const Icon(Icons.phone_outlined, size: 13, color: Color(0xFF8E8E93)),
+                          const SizedBox(width: 4),
+                          Text(
+                            phone,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF5C5C5C)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              // Time ago badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _timeAgo(createdAt),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+          const SizedBox(height: 14),
+
+          // Vehicle info
+          Row(
+            children: [
+              Icon(
+                vehicleType.contains('Bicycle')
+                    ? Icons.directions_bike
+                    : vehicleType.contains('Motor') || vehicleType.contains('Scooter')
+                        ? Icons.motorcycle
+                        : vehicleType.contains('Car')
+                            ? Icons.directions_car
+                            : Icons.directions_walk,
+                size: 16,
+                color: const Color(0xFF595959),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                vehicleType,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1C1C)),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text('|', style: TextStyle(color: Color(0xFFE5E7EB))),
+              ),
+              Text(
+                vehicleNumber,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF5C5C5C)),
+              ),
+            ],
+          ),
+
+          // License photo (if available)
+          if (licenseUrl.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.badge_outlined, size: 14, color: Color(0xFF8E8E93)),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => _showLicensePhoto(licenseUrl),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.image_outlined, size: 14, color: Color(0xFF1967D2)),
+                        SizedBox(width: 4),
+                        Text(
+                          "View License",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1967D2),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 14),
+
+          // Approve / Reject buttons
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _rejectRiderApplication(app),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('Reject'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFF5222D),
+                      side: const BorderSide(color: Color(0xFFF5222D)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _approveRiderApplication(app),
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    label: const Text('Approve'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E8E3E),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show license photo in a dialog.
+  void _showLicensePhoto(String licenseUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                licenseUrl,
+                width: double.infinity,
+                height: MediaQuery.of(context).size.height * 0.5,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text('Failed to load image',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    height: MediaQuery.of(context).size.height * 0.5,
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black38,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

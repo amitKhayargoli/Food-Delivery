@@ -18,9 +18,11 @@ import couponRoutes from './routes/coupons.routes';
 import homeRoutes from './routes/home.routes';
 import supportRoutes from './routes/support.routes';
 import problemRoutes from './routes/problems.routes';
+import reviewRoutes from './routes/reviews.routes';
+import notificationRoutes from './routes/notifications.routes';
+import riderRoutes from './routes/riders.routes';
 import { supabase } from './db/supabase';
 import { startStaleRiderCleanup } from './services/stale-rider-cleanup.service';
-import { startAssignmentTimeoutScanner } from './services/assignment-timeout.service';
 
 dotenv.config();
 
@@ -59,6 +61,9 @@ app.use('/api/home', homeRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/problems', problemRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/riders', riderRoutes);
 
 const PORT = Number(process.env.PORT) || 5000;
 
@@ -67,6 +72,9 @@ const REQUIRED_BUCKETS = [
   { name: 'restaurant-images', public: true },
   { name: 'food-images', public: true },
   { name: 'avatar-images', public: true },
+  { name: 'delivery-photos', public: true },
+  { name: 'review-images', public: true },
+  { name: 'rider-documents', public: true },
 ];
 
 async function ensureStorageBuckets(): Promise<void> {
@@ -109,9 +117,6 @@ app.listen(PORT, '0.0.0.0', async () => {
 
   // ── Background: stale rider cleanup (every 30s) ──
   startStaleRiderCleanup();
-
-  // ── Background: assignment timeout scanner (every 30s) ──
-  startAssignmentTimeoutScanner();
 });
 
 export default app;

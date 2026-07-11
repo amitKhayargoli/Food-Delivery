@@ -14,13 +14,17 @@ import 'support_conversation_list_screen.dart';
 import 'my_reports_screen.dart';
 import '../owner/restaurant_application_screen.dart';
 import '../auth/login_screen.dart';
+import 'edit_profile_screen.dart';
+import '../owner/manage_restaurant_screen.dart';
+import '../owner/owner_support_inbox_screen.dart';
+import '../owner/owner_reports_screen.dart';
+import '../delivery/delivery_application_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authViewModel = ref.watch(authViewModelProvider);
     final favorites = ref.watch(favoritesProvider);
 
     // Use restaurants from the API provider; show favorites or top 3 as default
@@ -29,39 +33,53 @@ class ProfileScreen extends ConsumerWidget {
         .where((r) => favorites.favoriteRestaurantIds.contains(r.id))
         .toList();
 
-    final userName = authViewModel.currentUser?.username ?? 'Amit Khayargoli';
-    final userEmail = authViewModel.currentUser?.email ?? 'khayargoliamit99@gmail.com';
-
     final authProvider = context.watch<AuthProvider>();
+
+    // Fetch from AuthProvider which loads from Supabase on init
+    final userName = authProvider.username ?? 'User';
+    final userEmail = authProvider.email ?? '';
+
+    final isOwner = authProvider.activeRole == 'RESTAURANT_OWNER';
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // App Bar
-              _buildAppBar(context),
-              // Profile Header
-              _buildProfileHeader(context, userName, userEmail, authProvider),
-              // Your Roles (multi-role info)
-              _buildRolesSection(context, authProvider),
-              // Favorite Restaurants
-              _buildFavoriteRestaurantsSection(context, ref, favoriteRestaurants),
-              // Customize Feed (Settings)
-              _buildPreferencesSection(context),
-
-          // Support
-          _buildSupportSection(context),
-
-          // Business & Partnerships
-          _buildBusinessSection(context),
-              // Logout Button
-              _buildLogoutButton(context, ref),
-              const SizedBox(height: 32),
-            ],
-          ),
+        child: Column(
+          children: [
+            // App Bar — stays fixed at the top
+            _buildAppBar(context),
+            // Scrollable content below the app bar
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Conditional content: restaurant owner vs regular user
+                    if (isOwner)
+                      _RestaurantOwnerProfile(authProvider: authProvider)
+                    else ...[
+                      // Profile Header
+                      _buildProfileHeader(context, userName, userEmail, authProvider),
+                      // Favorite Restaurants
+                      _buildFavoriteRestaurantsSection(context, ref, favoriteRestaurants),
+                      // Customize Feed (Settings)
+                      _buildPreferencesSection(context),
+                      // Business & Partnerships
+                      _buildBusinessSection(context),
+                    ],
+                    // Shared sections for all roles
+                    // Your Roles (multi-role info)
+                    _buildRolesSection(context, authProvider),
+                    // Support
+                    _buildSupportSection(context, isOwner: isOwner),
+                    // Logout Button
+                    _buildLogoutButton(context, ref),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -74,12 +92,12 @@ class ProfileScreen extends ConsumerWidget {
   Widget _buildAppBar(BuildContext context) {
     return Container(
       width: double.infinity,
-      decoration: ShapeDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+        border: const Border(
+          bottom: BorderSide(width: 1, color: Color(0xFFE5E7EB)),
         ),
-        shadows: const [
+        boxShadow: const [
           BoxShadow(
             color: Color(0x0C000000),
             blurRadius: 2,
@@ -113,12 +131,6 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.settings_outlined, color: Color(0xFF8C8C8C)),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  ),
                 ],
               ),
             ),
@@ -156,7 +168,7 @@ class ProfileScreen extends ConsumerWidget {
                     shape: RoundedRectangleBorder(
                       side: const BorderSide(
                         width: 4,
-                        color: Color(0x19BB0018),
+                        color: Color(0x19F5222D),
                       ),
                       borderRadius: BorderRadius.circular(9999),
                     ),
@@ -254,6 +266,44 @@ class ProfileScreen extends ConsumerWidget {
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 height: 1.43,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Edit Profile button
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const EditProfileScreen(),
+                ),
+              );
+            },
+            child: Container(
+              width: 160,
+              height: 38,
+              decoration: ShapeDecoration(
+                color: const Color(0xFFFFF1F0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.edit_outlined,
+                      size: 16, color: Color(0xFFF5222D)),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Edit Profile',
+                    style: TextStyle(
+                      color: Color(0xFFF5222D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -430,6 +480,7 @@ class ProfileScreen extends ConsumerWidget {
     final hasMultipleRoles = roles.length > 1;
 
     String formatRole(String raw) {
+      if (raw == 'USER') return 'Customer';
       return raw
           .split('_')
           .map((w) => w.isNotEmpty
@@ -483,14 +534,14 @@ class ProfileScreen extends ConsumerWidget {
                 Row(
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFF1F0),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(roleIcon(activeRole),
-                          color: const Color(0xFFBB0018), size: 20),
+                          color: const Color(0xFFF5222D), size: 24),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -518,7 +569,7 @@ class ProfileScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFBB0018).withValues(alpha: 0.1),
+                        color: const Color(0xFFF5222D).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -526,7 +577,7 @@ class ProfileScreen extends ConsumerWidget {
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFBB0018),
+                          color: Color(0xFFF5222D),
                         ),
                       ),
                     ),
@@ -555,16 +606,23 @@ class ProfileScreen extends ConsumerWidget {
                               child: Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF9FAFB),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                       color: const Color(0xFFE5E7EB)),
-                                ),
-                                child: Row(
+                                ),                                  child: Row(
                                   children: [
-                                    Icon(roleIcon(role),
-                                        color: const Color(0xFF8E8E93),
-                                        size: 20),
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF5F5F5),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(roleIcon(role),
+                                          color: const Color(0xFF8E8E93),
+                                          size: 24),
+                                    ),
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Column(
@@ -582,7 +640,11 @@ class ProfileScreen extends ConsumerWidget {
                                           Text(
                                             role == 'RESTAURANT_OWNER'
                                                 ? 'Manage your restaurant'
-                                                : 'Accept delivery jobs',
+                                                : role == 'DELIVERY_BOY'
+                                                    ? 'Accept delivery jobs'
+                                                    : role == 'USER'
+                                                        ? 'Browse and order food'
+                                                        : '',
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Color(0xFF8E8E93),
@@ -770,7 +832,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                     const SizedBox(height: 6),
                     Text(
-                      '${restaurant.rating} (120+) • ${restaurant.deliveryTimeMinutes} mins',
+                      '${restaurant.rating}${restaurant.totalReviews > 0 ? ' (${restaurant.totalReviews})' : ''} • ${restaurant.deliveryTimeMinutes} mins',
                       style: const TextStyle(
                         color: Color(0xFF595959),
                         fontSize: 13,
@@ -888,13 +950,13 @@ class ProfileScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
-                    width: 56,
-                    height: 56,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
                       color: iconColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(icon, size: 28, color: iconColor),
+                    child: Icon(icon, size: 24, color: iconColor),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -938,7 +1000,59 @@ class ProfileScreen extends ConsumerWidget {
   // Support Section
   // ──────────────────────────────────────────────
 
-  Widget _buildSupportSection(BuildContext context) {
+  Widget _buildSupportSection(BuildContext context, {bool isOwner = false}) {
+    if (isOwner) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Customer Support',
+              style: TextStyle(
+                color: Color(0xFF1A1A1A),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                height: 1.33,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildPreferenceCard(
+              context,
+              icon: Icons.headset_mic_rounded,
+              iconColor: const Color(0xFF1967D2),
+              title: 'Customer Support Inbox',
+              subtitle: 'View and respond to customer inquiries',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const OwnerSupportInboxScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildPreferenceCard(
+              context,
+              icon: Icons.flag_outlined,
+              iconColor: const Color(0xFFF9A825),
+              title: 'Customer Problem Reports',
+              subtitle: 'View issues reported by your customers',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const OwnerReportsScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
@@ -1035,8 +1149,11 @@ class ProfileScreen extends ConsumerWidget {
             title: 'Become a Delivery Partner',
             subtitle: 'Earn on your own schedule',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Delivery partner registration coming soon')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeliveryApplicationScreen(),
+                ),
               );
             },
           ),
@@ -1078,8 +1195,8 @@ class ProfileScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: Image.asset(
                       imagePath,
-                      width: 56,
-                      height: 56,
+                      width: 48,
+                      height: 48,
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -1192,5 +1309,326 @@ class ProfileScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Restaurant Owner Profile (shown on Profile tab for RESTAURANT_OWNER role)
+// ──────────────────────────────────────────────
+
+class _RestaurantOwnerProfile extends StatefulWidget {
+  final AuthProvider authProvider;
+
+  const _RestaurantOwnerProfile({required this.authProvider});
+
+  @override
+  State<_RestaurantOwnerProfile> createState() => _RestaurantOwnerProfileState();
+}
+
+class _RestaurantOwnerProfileState extends State<_RestaurantOwnerProfile> {
+  Map<String, dynamic>? _application;
+  bool _isLoading = true;
+  String? _error;
+
+  String? get _token => widget.authProvider.token;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchApplication();
+  }
+
+  Future<void> _fetchApplication() async {
+    final token = _token;
+    if (token == null) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Not authenticated.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = di.sl<ApiService>();
+      final app = await api.getMyApplication(token: token);
+      if (!mounted) return;
+      setState(() {
+        _application = app;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load restaurant data.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFFF5222D)),
+              SizedBox(height: 12),
+              Text(
+                'Loading restaurant...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null && _application == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Color(0xFFD9D9D9)),
+              const SizedBox(height: 12),
+              const Text(
+                'Could not load restaurant.',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _fetchApplication,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF5222D),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final app = _application;
+    final name = app?['restaurant_name'] as String? ?? 'Your Restaurant';
+    final cuisine = app?['cuisine_type'] as String?;
+    final address = app?['address'] as String?;
+    final logoUrl = app?['logo_url'] as String?;
+    final coverImageUrl = app?['cover_image_url'] as String?;
+    final openTime = app?['open_time'] as String?;
+    final closeTime = app?['close_time'] as String?;
+
+    final hasCover = coverImageUrl != null && coverImageUrl.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Restaurant Profile Header ──
+        // Cover image banner (full width) with overlapping logo
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            children: [
+              // Cover banner
+              if (hasCover)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(24),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 160,
+                    child: Image.network(
+                      coverImageUrl,
+                      width: double.infinity,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                            height: 160,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFFFFF1F0), Color(0xFFFAF9F9)],
+                              ),
+                            ),
+                          ),
+                    ),
+                  ),
+                ),
+
+              // Content area with logo + info
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, hasCover ? 0 : 24, 16, 8),
+                child: Column(
+                  children: [
+                    // Logo — offset upward to overlap with cover image
+                    Transform.translate(
+                      offset: Offset(0, hasCover ? -50 : 0),
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0x19F5222D), width: 4),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x19000000),
+                              blurRadius: 6,
+                              offset: Offset(0, 4),
+                              spreadRadius: -4,
+                            ),
+                            BoxShadow(
+                              color: Color(0x19000000),
+                              blurRadius: 15,
+                              offset: Offset(0, 10),
+                              spreadRadius: -3,
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: logoUrl != null && logoUrl.isNotEmpty
+                              ? Image.network(
+                                  logoUrl,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => _buildLogoFallback(),
+                                )
+                              : _buildLogoFallback(),
+                        ),
+                      ),
+                    ),
+                    // Add spacing after logo (reduced when cover overlaps)
+                    SizedBox(height: hasCover ? 4 : 12),
+                    // Restaurant name
+                    Text(
+                      name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF1A1A1A),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        height: 1.33,
+                      ),
+                    ),
+                    // Cuisine + Hours row
+                    const SizedBox(height: 4),
+                    if (cuisine != null || (openTime != null && closeTime != null))
+                      Text(
+                        [
+                          if (cuisine != null) cuisine,
+                          if (openTime != null && closeTime != null)
+                            '${_formatTime(openTime)} - ${_formatTime(closeTime)}',
+                        ].join('  🕐  '),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF595959),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    // Address
+                    if (address != null && address.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('📍', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              address,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF8E8E93),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    // Manage Restaurant button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ManageRestaurantScreen(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 180,
+                        height: 38,
+                        decoration: ShapeDecoration(
+                          color: const Color(0xFFFFF1F0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.settings_rounded,
+                          size: 16, color: Color(0xFFF5222D)),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Manage Restaurant',
+                        style: TextStyle(
+                          color: Color(0xFFF5222D),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLogoFallback() {
+    return Container(
+      color: const Color(0xFFFFF1F0),
+      child: const Icon(
+        Icons.store_rounded,
+        size: 44,
+        color: Color(0xFFF5222D),
+      ),
+    );
+  }
+
+  String _formatTime(String? time) {
+    if (time == null) return '';
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 9;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return '$hour12:${minute.toString().padLeft(2, '0')} $period';
   }
 }
