@@ -14,7 +14,7 @@
 
 | Restaurant & Offers | Food Details | Delivery Experience |
 |:---:|:---:|:---:|
-| <img src="app/assets/img/Pizza%20Point.png" alt="Restaurant menu with offers" width="240" /> | <img src="app/assets/img/Food%20Details.png" alt="Food details with size selection" width="240" /> | <img src="app/assets/img/deliveryguy.png" alt="Rider on the way" width="240" /> |
+| <img src="app/assets/img/Pizza%20Point.png" alt="Restaurant menu with offers" width="240" /> | <img src="app/assets/img/Food%20Details.png" alt="Food details with size selection" width="240" /> | <img src="app/assets/img/checkout/Track%20Order.png" alt="Track your order in real time" width="240" /> |
 | Browse restaurants, bestsellers, and live offers like *Flat 50% OFF*. | Pick your size, customize add-ons, and add to cart in one tap. | Real-time rider tracking from pickup to your doorstep. |
 
 ---
