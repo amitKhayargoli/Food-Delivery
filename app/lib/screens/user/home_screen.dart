@@ -6,6 +6,8 @@ import '../../models/models.dart';
 import '../../models/order.dart';
 import '../../cart_provider.dart';
 import '../../core/services/api_service.dart';
+import '../../providers/notification_provider.dart';
+import '../notifications_screen.dart';
 import '../../core/utils/time_of_day_util.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
@@ -168,7 +170,9 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
-        child: CustomScrollView(
+        child: Stack(
+          children: [
+            CustomScrollView(
           slivers: [
             // ── Sticky Location Header (SliverPersistentHeader, pinned) ──
             SliverPersistentHeader(
@@ -277,6 +281,72 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
             ),
           ],
         ),
+
+        // ── Bell icon (top-right) ──
+        Positioned(
+          top: 8,
+          right: 12,
+          child: _buildBellIcon(context),
+        ),
+      ],
+      ),
+    ),
+  );
+  }
+
+  Widget _buildBellIcon(BuildContext context) {
+    final notifProvider = context.watch<NotificationProvider>();
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(30),
+      elevation: 4,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(30),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+          );
+        },
+        child: Container(
+          width: 42,
+          height: 42,
+          padding: const EdgeInsets.all(2),
+          child: Stack(
+            children: [
+              const Center(
+                child: Icon(
+                  Icons.notifications_outlined,
+                  size: 22,
+                  color: Color(0xFF1A1C1C),
+                ),
+              ),
+              if (notifProvider.hasUnread)
+                Positioned(
+                  top: 2,
+                  right: 4,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF5222D),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${notifProvider.unreadCount}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -322,7 +392,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  TimeOfDayUtil.suggestionSectionTitle(_currentPeriod),
+                  context.read<AuthProvider>().username ?? 'Hungry?',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFF8E8E93),
@@ -387,7 +457,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Because you ordered from #${latestOrder.orderNumber}',
+                  'Because you ordered from ${latestOrder.restaurantName}',
                   style: const TextStyle(
                     color: Color(0xFF262626),
                     fontSize: 18,
@@ -1206,13 +1276,24 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        restaurant.rating.toString(),
+                        restaurant.rating.toStringAsFixed(1),
                         style: const TextStyle(
                           color: Color(0xFF595959),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (restaurant.totalReviews > 0) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(${restaurant.totalReviews})',
+                          style: const TextStyle(
+                            color: Color(0xFF8C8C8C),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 4),

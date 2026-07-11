@@ -5,6 +5,7 @@ import '../../cart_provider.dart';
 import '../../state_providers.dart';
 import 'cart_screen.dart';
 import 'food_details_screen.dart';
+import 'restaurant_reviews_screen.dart';
 
 class RestaurantMenuScreen extends ConsumerStatefulWidget {
   final Restaurant restaurant;
@@ -108,6 +109,9 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
 
                 // ── Restaurant Info ──
                 _buildRestaurantInfo(),
+
+                // ── Ratings & Reviews ──
+                _buildReviewsSection(),
 
                 // ── Offer Banner ──
                 _buildOfferBanner(),
@@ -314,6 +318,109 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // Rating & Reviews Section
+  // ──────────────────────────────────────────────
+
+  Widget _buildReviewsSection() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: ShapeDecoration(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(width: 1, color: Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RestaurantReviewsScreen(
+                restaurant: widget.restaurant,
+              ),
+            ),
+          );
+        },
+        child: Row(
+          children: [
+            // Rating summary
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.star_rounded,
+                          size: 16, color: Color(0xFFF9A825)),
+                      const SizedBox(width: 2),
+                      Text(
+                        widget.restaurant.rating.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A1C1C),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '${widget.restaurant.totalReviews > 0 ? widget.restaurant.totalReviews : ''} review${widget.restaurant.totalReviews != 1 ? 's' : ''}',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF8E8E93),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Ratings & Reviews',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1C1C),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.restaurant.totalReviews > 0
+                        ? 'See what others are saying'
+                        : 'Be the first to review',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF8E8E93),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right,
+                size: 20, color: Color(0xFFBFBFBF)),
+          ],
+        ),
       ),
     );
   }

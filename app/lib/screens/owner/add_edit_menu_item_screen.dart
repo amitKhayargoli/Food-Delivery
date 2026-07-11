@@ -56,7 +56,6 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
   final _sizeNameCtrl = TextEditingController();
   final _sizeWeightCtrl = TextEditingController();
   final _sizePriceCtrl = TextEditingController();
-  bool _sizeIsPopular = false;
   int? _editingSizeIndex;
 
   // Step 1 field-level error state
@@ -80,6 +79,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
     'Breakfast',
     'Salad',
     'Soup',
+    'Light Meals',
     'Other',
   ];
 
@@ -248,7 +248,6 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
           name: name,
           weight: weight,
           price: price,
-          isPopular: _sizeIsPopular,
         );
         _editingSizeIndex = null;
       } else {
@@ -256,13 +255,11 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
           name: name,
           weight: weight,
           price: price,
-          isPopular: _sizeIsPopular,
         ));
       }
       _sizeNameCtrl.clear();
       _sizeWeightCtrl.clear();
       _sizePriceCtrl.clear();
-      _sizeIsPopular = false;
     });
   }
 
@@ -271,7 +268,6 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
     _sizeNameCtrl.text = size.name;
     _sizeWeightCtrl.text = size.weight;
     _sizePriceCtrl.text = size.price.toStringAsFixed(0);
-    _sizeIsPopular = size.isPopular;
     _editingSizeIndex = index;
   }
 
@@ -283,7 +279,6 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         _sizeNameCtrl.clear();
         _sizeWeightCtrl.clear();
         _sizePriceCtrl.clear();
-        _sizeIsPopular = false;
       }
     });
   }
@@ -529,9 +524,10 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         ),
         const SizedBox(height: 24),
         // Progress indicator
-        const StepProgressIndicator(
+        StepProgressIndicator(
           currentStep: 0,
           steps: _steps,
+          onStepTapped: (step) => _goToStep(step),
         ),
         const SizedBox(height: 24),
         // Form card
@@ -615,7 +611,8 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _categoryCtrl.text.isNotEmpty &&
-                  _categoryOptions.contains(_categoryCtrl.text)
+                  _categoryOptions.any((c) =>
+                      c.toLowerCase() == _categoryCtrl.text.toLowerCase())
               ? _categoryCtrl.text
               : null,
           isExpanded: true,
@@ -627,7 +624,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
           hint: const Text(
             'Select category',
             style: TextStyle(
-              color: Color(0xFFBFBFBF),
+              color: Color(0xFF8E8E93),
               fontSize: 14,
               fontWeight: FontWeight.w400,
             ),
@@ -736,9 +733,10 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         ),
         const SizedBox(height: 24),
         // Progress indicator
-        const StepProgressIndicator(
+        StepProgressIndicator(
           currentStep: 1,
           steps: _steps,
+          onStepTapped: (step) => _goToStep(step),
         ),
         const SizedBox(height: 24),
         // Photos section
@@ -803,7 +801,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFAFAFA),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                       color: const Color(0xFFE8E8E8), width: 1.5),
@@ -844,7 +842,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                     size: 14, color: Color(0xFFF57C00)),
                 const SizedBox(width: 6),
                 const Text(
-                  'Upload at least 3 photos (US-15 requirement)',
+                  'Upload at least 3 photos',
                   style: TextStyle(fontSize: 11, color: Color(0xFF795548)),
                 ),
               ],
@@ -878,7 +876,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFFAFAFA),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: const Color(0xFFE8E8E8)),
           ),
@@ -941,8 +939,9 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
       Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Color(0xFFE8E8E8)),
         ),
         child: Column(
           children: [
@@ -975,22 +974,6 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Row(
-                  children: [
-                    SizedBox(
-                      height: 24,
-                      child: Checkbox(
-                        value: _sizeIsPopular,
-                        onChanged: (v) =>
-                            setState(() => _sizeIsPopular = v ?? false),
-                        activeColor: const Color(0xFFF5222D),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                    const Text('Popular',
-                        style: TextStyle(fontSize: 12)),
-                  ],
-                ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _addSize,
@@ -1014,7 +997,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
       children: [
         Expanded(
           child: SizedBox(
-            height: 56,
+            height: 48,
             child: OutlinedButton(
               onPressed: () => _goToStep(0),
               style: OutlinedButton.styleFrom(
@@ -1023,7 +1006,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               child: const Text(
                 'Go Back',
@@ -1039,7 +1022,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         Expanded(
           flex: 2,
           child: SizedBox(
-            height: 56,
+            height: 48,
             child: ElevatedButton(
               onPressed: () => _goToStep(2),
               style: ElevatedButton.styleFrom(
@@ -1050,7 +1033,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 shadowColor: const Color(0x0C000000),
               ),
               child: const Text(
@@ -1058,7 +1041,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1147,9 +1130,10 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         ),
         const SizedBox(height: 24),
         // Progress indicator
-        const StepProgressIndicator(
+        StepProgressIndicator(
           currentStep: 2,
           steps: _steps,
+          onStepTapped: (step) => _goToStep(step),
         ),
         const SizedBox(height: 24),
         // Nutrition card
@@ -1223,8 +1207,8 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                       style: const TextStyle(fontSize: 12, color: Color(0xFF1A1A1A))),
                   deleteIcon: const Icon(Icons.close, size: 14),
                   onDeleted: () => _removeIngredient(entry.key),
-                  backgroundColor: const Color(0xFFF5F5F5),
-                  side: BorderSide.none,
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFE8E8E8)),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 );
@@ -1452,7 +1436,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         ),
         child: SizedBox(
           width: double.infinity,
-          height: 56,
+          height: 48,
           child: ElevatedButton(
             onPressed: () => _goToStep(1),
             style: ElevatedButton.styleFrom(
@@ -1463,13 +1447,14 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
             child: const Text(
               'Continue to Media & Sizes',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1493,17 +1478,17 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
         children: [
           // Go Back button
           SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: OutlinedButton(
-              onPressed: () => _goToStep(1),
-              style: OutlinedButton.styleFrom(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: () => _goToStep(1),
+                style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.black,
                 side: const BorderSide(color: Color(0xFFD9D9D9)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               child: const Text(
                 'Go Back to Media & Sizes',
@@ -1517,24 +1502,25 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
           const SizedBox(height: 12),
           // Save button
           SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF5222D),
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFFE0E0E0),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF5222D),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFE0E0E0),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  shadowColor: const Color(0x0C000000),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                shadowColor: const Color(0x0C000000),
-              ),
               child: _isSaving
                   ? const SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
                         color: Colors.white,
@@ -1545,7 +1531,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1632,7 +1618,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: const TextStyle(
-                  color: Color(0xFFBFBFBF),
+                  color: Color(0xFF8E8E93),
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
                 ),
@@ -1671,7 +1657,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
       style: const TextStyle(fontSize: 13),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFFBFBFBF), fontSize: 13),
+        hintStyle: const TextStyle(color: Color(0xFF8E8E93), fontSize: 13),
         filled: true,
         fillColor: Colors.white,
         contentPadding:
@@ -1712,7 +1698,7 @@ class _AddEditMenuItemScreenState extends State<AddEditMenuItemScreen> {
             errorBuilder: (_, _, _) => Container(
               width: 80,
               height: 80,
-              color: const Color(0xFFF0F0F0),
+              color: Colors.white,
               child: const Icon(Icons.broken_image,
                   color: Color(0xFFBFBFBF), size: 28),
             ),

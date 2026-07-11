@@ -386,42 +386,40 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Name + photo count badge
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          item.name,
-                          style: const TextStyle(
-                            color: Color(0xFF1A1C1C),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            height: 1.25,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (item.imageUrls.length >= 3) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE6F4EA),
-                            borderRadius: BorderRadius.circular(9999),
-                          ),
-                          child: const Text(
-                            '3+',
-                            style: TextStyle(
-                              color: Color(0xFF1E8E3E),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              height: 1.50,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                  // Name
+                  Text(
+                    item.name,
+                    style: const TextStyle(
+                      color: Color(0xFF1A1C1C),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  // Category pill
+                  if (item.categoryId.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    _buildPillBadge(
+                      label: item.categoryId.toUpperCase(),
+                      bgColor: const Color(0xFFEFEDED),
+                      textColor: const Color(0xFF5E3F3C),
+                    ),
+                  ],
+
+                  const SizedBox(height: 6),
+
+                  // Price
+                  Text(
+                    'Rs. ${item.price.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      color: Color(0xFFBB0018),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
                   ),
 
                   // Description
@@ -430,7 +428,7 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
                     Text(
                       item.description,
                       style: const TextStyle(
-                        color: Color(0xFF5C5C5C),
+                        color: Color(0xFF8E8E93),
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
                         height: 1.38,
@@ -440,60 +438,7 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
                     ),
                   ],
 
-                  const SizedBox(height: 4),
 
-                  // Price + category + size badges
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        'Rs. ${item.price.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Color(0xFFBB0018),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          height: 1.50,
-                        ),
-                      ),
-                      if (item.categoryId.isNotEmpty)
-                        _buildPillBadge(
-                          label: item.categoryId.toUpperCase(),
-                          bgColor: const Color(0xFFEFEDED),
-                          textColor: const Color(0xFF5E3F3C),
-                        ),
-                      if (item.sizes.isNotEmpty)
-                        _buildPillBadge(
-                          label: '${item.sizes.length} Size${item.sizes.length > 1 ? 's' : ''}',
-                          bgColor: const Color(0xFFE8F0FE),
-                          textColor: const Color(0xFF1967D2),
-                        ),
-                    ],
-                  ),
-
-                  // Nutrition row
-                  if (item.calories != null || item.portionWeight != null) ...[
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        if (item.calories != null)
-                          _buildPillBadge(
-                            label: '${item.calories} kcal',
-                            bgColor: const Color(0xFFFFF8E1),
-                            textColor: const Color(0xFFF9A825),
-                          ),
-                        if (item.portionWeight != null)
-                          _buildPillBadge(
-                            label: item.portionWeight!,
-                            bgColor: const Color(0xFFE3F2FD),
-                            textColor: const Color(0xFF1E88E5),
-                          ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),

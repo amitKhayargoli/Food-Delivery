@@ -137,10 +137,17 @@ class _OtpScreenState extends State<OtpScreen> {
       if (response.isSuccess && response.token != null) {
         // Store auth and navigate
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        // Only pass email if it's a real one (not a placeholder like {phone}@placeholder.local)
+        final rawEmail = response.user?.email;
+        // Only treat as a real email if it's not a placeholder like {phone}@placeholder.local
+        final cleanEmail =
+            rawEmail != null && !rawEmail.endsWith('@placeholder.local') ? rawEmail : null;
         await authProvider.login(
           response.token!,
           response.user?.role ?? 'USER',
           response.user?.username ?? 'User',
+          email: cleanEmail,
+          phone: response.user?.phone,
         );
 
         if (!mounted) return;

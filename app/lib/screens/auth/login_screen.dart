@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../navigation/app_navigation.dart';
 import 'complete_profile_screen.dart';
 import 'otp_screen.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -317,9 +318,37 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 24, right: 24),
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const SignUpScreen()),
+                  );
+                },
+                child: Text.rich(
+                  textAlign: TextAlign.center,
+                  TextSpan(
+                    children: [
+                      const TextSpan(
+                        text: "Don't have an account? ",
+                        style: TextStyle(color: Color(0xFF8C8C8C), fontSize: 12),
+                      ),
+                      TextSpan(
+                        text: 'Sign Up',
+                        style: const TextStyle(
+                          color: Color(0xFFF5222D),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.only(top: 24, left: 24, right: 24, bottom: 20),
+              padding: const EdgeInsets.only(top: 16, left: 24, right: 24, bottom: 20),
               child: RichText(
                 textAlign: TextAlign.center,
                 text: const TextSpan(

@@ -13,7 +13,9 @@ import '../../core/services/rider_location_service.dart';
 import '../../widgets/rider_map_view.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/rider_notes_provider.dart';
+import '../notifications_screen.dart';
 
 
 class DeliveryJobsScreen extends StatefulWidget {
@@ -537,7 +539,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Decline Delivery?'),
         content: Text(
-          'Decline order #${order.orderNumber}?\n\n'
+          'Decline this delivery?\n\n'
           'The restaurant owner will be notified and can reassign another rider.',
         ),
         actions: [
@@ -689,6 +691,50 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
           ],
         ),
         actions: [
+          // Bell icon for notifications
+          Consumer<NotificationProvider>(
+            builder: (context, notifProvider, _) => Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: IconButton(
+                icon: Stack(
+                  children: [
+                    const Icon(Icons.notifications_outlined, size: 22),
+                    if (notifProvider.hasUnread)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF5222D),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${notifProvider.unreadCount}',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const NotificationsScreen()),
+                  );
+                },
+                tooltip: 'Notifications',
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
@@ -869,8 +915,8 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   const Icon(Icons.receipt_long_rounded,
                       size: 18, color: Color(0xFFBB0018)),
                   const SizedBox(width: 8),
-                  Text(
-                    '#${order.orderNumber}',
+                  const Text(
+                    'Delivery',
                     style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1A1A),
@@ -1536,8 +1582,8 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          '#${order.orderNumber} — ${_formatCurrency(order.total)}',
+                        child:                      Text(
+                          '${_formatCurrency(order.total)}',
                           style: const TextStyle(
                               fontSize: 13, color: Color(0xFF1A1C1C)),
                         ),

@@ -6,13 +6,15 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../models/order.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
-import '../../widgets/toggle_switch.dart';
+import '../../core/services/baato_eta_service.dart';
 import '../../widgets/rider_map_view.dart';
 import '../../injection_container.dart' as di;
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../user/order_detail_screen.dart';
 import '../full_screen_map_screen.dart';
-import 'manage_restaurant_screen.dart';
+import '../user/support_chat_screen.dart';
+import '../notifications_screen.dart';
 
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
@@ -26,10 +28,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   List<Order> _searchResults = [];
   bool _isLoading = true;
   String? _error;
-  bool _isAcceptingOrders = true;
   int _selectedTab = 0;
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  bool _isSearchLoading = false;
   String? _searchError;
   Timer? _searchDebounce;
   sb.RealtimeChannel? _orderChannel;
@@ -37,6 +39,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   /// Problem reports for the owner's restaurant
   List<Map<String, dynamic>> _problems = [];
   bool _isLoadingProblems = false;
+
+  /// Support conversations for this owner (acting as support agent)
+  List<Map<String, dynamic>> _supportConversations = [];
+  bool _isLoadingSupport = false;
 
   /// The restaurant's lat/lng, used for getNearbyRiders queries.
   /// Fetched once from getMyApplication on init.
@@ -51,13 +57,63 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   /// Realtime channels for each assigned rider, keyed by rider ID.
   final Map<String, sb.RealtimeChannel> _riderChannels = {};
 
+  // ── Baato Directions-based ETA ──
+  final BaatoEtaService _baatoEtaService = BaatoEtaService();
+
+  /// Cached Baato road-based ETA results keyed by order ID.
+  final Map<String, int> _baatoEtaMinutes = {};
+
+  /// Cached Baato road-based distance (km) keyed by order ID.
+  final Map<String, double> _baatoEtaDistanceKm = {};
+
   @override
   void initState() {
     super.initState();
     _fetchOrders();
-    _fetchRestaurantSettings();
     _fetchRestaurantLocation();
     _fetchProblems();
+    _fetchSupportConversations();
+  }
+
+  // ── Support Conversations ─────────────────────
+
+  Future<void> _fetchSupportConversations() async {
+    final token = _token;
+    if (token == null) return;
+
+    setState(() => _isLoadingSupport = true);
+
+    try {
+      final api = di.sl<ApiService>();
+      final conversations = await api.getAllSupportConversations(token: token);
+      if (!mounted) return;
+      setState(() {
+        _supportConversations = conversations;
+        _isLoadingSupport = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingSupport = false);
+    }
+  }
+
+  /// Refresh support conversations without showing a loading spinner.
+  /// Used after navigating back from a support chat to avoid the spinner
+  /// that would reset the scroll position in the support tab.
+  Future<void> _silentRefreshSupport() async {
+    final token = _token;
+    if (token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final conversations = await api.getAllSupportConversations(token: token);
+      if (!mounted) return;
+      setState(() {
+        _supportConversations = conversations;
+      });
+    } catch (_) {
+      // Silently ignore — data stays as-is
+    }
   }
 
   /// Fetch the restaurant's stored lat/lng from the application record.
@@ -105,6 +161,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 type: RiderMapPointType.rider,
               );
             });
+            // Refresh road-based ETA for this order
+            _refreshBaatoEtaForOrder(orderId);
           }
         },
       );
@@ -145,6 +203,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           type: RiderMapPointType.rider,
         );
       });
+      // Fetch Baato road-based ETA for this order on initial load
+      _refreshBaatoEtaForOrder(orderId);
     } catch (e) {
       debugPrint('[RT-OwnerRider] Fetch error: $e');
     }
@@ -168,21 +228,73 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     _riderChannels.clear();
   }
 
-  /// Estimate rider's ETA to the restaurant using Haversine distance.
+  /// Fetch road-based ETA from Baato Directions API for a single order.
+  /// Updates [_baatoEtaMinutes] on success. Falls back silently.
+  Future<void> _refreshBaatoEtaForOrder(String orderId) async {
+    final riderLoc = _riderLocations[orderId];
+    if (riderLoc == null || _restaurantLat == null || _restaurantLng == null) {
+      return;
+    }
+
+    try {
+      final response = await _baatoEtaService.getEta(
+        fromLat: riderLoc.latitude,
+        fromLng: riderLoc.longitude,
+        toLat: _restaurantLat!,
+        toLng: _restaurantLng!,
+      );
+
+      if (response.isSuccess && mounted) {
+        setState(() {
+          _baatoEtaMinutes[orderId] = response.result!.durationMinutes;
+          _baatoEtaDistanceKm[orderId] = response.result!.distanceKm;
+        });
+      }
+    } catch (_) {
+      // Silently fall back to Haversine
+    }
+  }
+
+  /// Maximum reasonable delivery distance in km.
+  static const double _maxReasonableDistanceKm = 100.0;
+
+  /// Estimate rider's ETA to the restaurant.
+  ///
+  /// Priority order:
+  /// 1. Baato Directions API result (road-based ETA from [_baatoEtaMinutes])
+  /// 2. Haversine straight-line fallback (when API unavailable)
+  /// 3. null when coordinates are invalid
   int? _estimateRiderEtaMinutes(String orderId) {
     final riderLoc = _riderLocations[orderId];
     if (riderLoc == null || _restaurantLat == null || _restaurantLng == null) {
       return null;
     }
 
+    final double lat1 = riderLoc.latitude;
+    final double lon1 = riderLoc.longitude;
+    final double lat2 = _restaurantLat!;
+    final double lon2 = _restaurantLng!;
+
+    // Reject default / invalid coordinates (0, 0)
+    if ((lat1 == 0.0 && lon1 == 0.0) || (lat2 == 0.0 && lon2 == 0.0)) {
+      return null;
+    }
+
+    // ── Priority 1: Baato Directions road-based ETA ──
+    final cachedEta = _baatoEtaMinutes[orderId];
+    if (cachedEta != null && cachedEta > 0) {
+      return cachedEta;
+    }
+
+    // ── Priority 2: Haversine straight-line estimate (fallback) ──
     const double avgSpeedKmh = 20.0;
     const double R = 6371;
 
     // Convert all lat/lng to radians before trig functions
-    final double lat1Rad = _deg2rad(riderLoc.latitude);
-    final double lat2Rad = _deg2rad(_restaurantLat!);
-    final double lng1Rad = _deg2rad(riderLoc.longitude);
-    final double lng2Rad = _deg2rad(_restaurantLng!);
+    final double lat1Rad = _deg2rad(lat1);
+    final double lat2Rad = _deg2rad(lat2);
+    final double lng1Rad = _deg2rad(lon1);
+    final double lng2Rad = _deg2rad(lon2);
     final double dLat = lat2Rad - lat1Rad;
     final double dLon = lng2Rad - lng1Rad;
 
@@ -192,11 +304,27 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2))
         .clamp(0.0, 1.0);
     final double c = 2 * asin(sqrt(a));
-    final int minutes = ((R * c) / avgSpeedKmh * 60).round();
+    final double distanceKm = R * c;
+
+    // Sanity check: if the straight-line distance is > 100 km the
+    // coordinates are likely invalid. Don't show an absurd ETA.
+    if (distanceKm > _maxReasonableDistanceKm) return null;
+
+    final int minutes = (distanceKm / avgSpeedKmh * 60).round();
     return minutes < 1 ? 1 : minutes;
   }
 
   double _deg2rad(double deg) => deg * (pi / 180.0);
+
+  /// Trigger Baato ETA refresh for all ready orders with rider locations.
+  void _refreshAllBaatoEta() {
+    for (final order in _readyOrders) {
+      final riderId = order.deliveryBoyId;
+      if (riderId != null && riderId.isNotEmpty) {
+        _refreshBaatoEtaForOrder(order.id);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -309,7 +437,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       // Clean up stale rider subscriptions and re-subscribe
       _unsubscribeFromAllRiderLocations();
       _riderLocations.clear();
+      _baatoEtaMinutes.clear();
+      _baatoEtaDistanceKm.clear();
       _subscribeToAllAssignedRiders();
+      // Fetch Baato road-based ETA for all newly assigned riders
+      _refreshAllBaatoEta();
     } on ApiException catch (e) {
       setState(() {
         _error = e.message;
@@ -322,52 +454,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         _error = 'Failed to load orders. Check your connection.';
         _isLoading = false;
       });
-    }
-  }
-
-  /// Fetch the restaurant settings (is_accepting_orders) from the API.
-  Future<void> _fetchRestaurantSettings() async {
-    final token = _token;
-    if (token == null) return;
-
-    try {
-      final api = di.sl<ApiService>();
-      final app = await api.getMyApplication(token: token);
-      if (app != null && mounted) {
-        setState(() {
-          _isAcceptingOrders = app['is_accepting_orders'] as bool? ?? true;
-        });
-      }
-    } catch (_) {
-      // Silently fail — local default is fine
-    }
-  }
-
-  /// Toggle accepting orders via the API with optimistic UI.
-  Future<void> _toggleAcceptingOrders(bool newValue) async {
-    final token = _token;
-    if (token == null) return;
-
-    // Optimistic update
-    setState(() => _isAcceptingOrders = newValue);
-
-    try {
-      final api = di.sl<ApiService>();
-      await api.toggleAcceptingOrders(isAccepting: newValue, token: token);
-    } on ApiException catch (e) {
-      // Revert on failure
-      if (mounted) setState(() => _isAcceptingOrders = !newValue);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isAcceptingOrders = !newValue);
     }
   }
 
@@ -426,6 +512,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
     setState(() => _isAssigning = true);
 
+    // Optimistic update: assign rider locally
+    _updateDeliveryBoyInPlace(order, riderId, riderName);
+
     try {
       final api = di.sl<ApiService>();
       await api.assignDeliveryBoy(
@@ -435,7 +524,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       );
 
       setState(() => _isAssigning = false);
-      _fetchOrders();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -447,6 +535,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         );
       }
     } on ApiException catch (e) {
+      // Revert on failure
+      _updateDeliveryBoyInPlace(order, order.deliveryBoyId ?? '', order.deliveryBoyName ?? '');
       setState(() => _isAssigning = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -462,16 +552,41 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     }
   }
 
+  /// Update delivery boy info on a single order in `_allOrders` in-place,
+  /// avoiding a full re-fetch that would lose scroll position.
+  void _updateDeliveryBoyInPlace(Order order, String riderId, String riderName) {
+    final idx = _allOrders.indexWhere((o) => o.id == order.id);
+    if (idx == -1) return;
+    _allOrders[idx] = order.copyWith(
+      deliveryBoyId: riderId.isNotEmpty ? riderId : null,
+      deliveryBoyName: riderName.isNotEmpty ? riderName : null,
+    );
+    setState(() {});
+  }
+
+  // ── Local optimistic update ────────────────────
+
+  /// Update a single order's status in `_allOrders` in-place, avoiding
+  /// a full re-fetch that would show a loading spinner and lose scroll position.
+  void _optimisticUpdateStatus(Order order, OrderStatus newStatus) {
+    final idx = _allOrders.indexWhere((o) => o.id == order.id);
+    if (idx == -1) return;
+    _allOrders[idx] = order.copyWith(status: newStatus);
+    setState(() {});
+  }
+
   // ── Order actions ────────────────────────────
 
   Future<void> _acceptOrder(Order order) async {
     final token = _token;
     if (token == null) return;
 
+    // Optimistic update: move to Preparing tab immediately
+    _optimisticUpdateStatus(order, OrderStatus.accepted);
+
     try {
       final api = di.sl<ApiService>();
       await api.acceptOrder(orderId: order.id, token: token);
-      _fetchOrders();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -482,6 +597,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         );
       }
     } on ApiException catch (e) {
+      // Revert on failure
+      _optimisticUpdateStatus(order, order.status);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -498,10 +615,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final token = _token;
     if (token == null) return;
 
+    // Optimistic update: remove from new orders list
+    _optimisticUpdateStatus(order, OrderStatus.cancelled);
+
     try {
       final api = di.sl<ApiService>();
       await api.rejectOrder(orderId: order.id, token: token);
-      _fetchOrders();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -511,6 +630,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         );
       }
     } on ApiException catch (e) {
+      // Revert on failure
+      _optimisticUpdateStatus(order, order.status);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -527,20 +648,24 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final token = _token;
     if (token == null) return;
 
+    // Optimistic update: stays in Preparing tab
+    _optimisticUpdateStatus(order, OrderStatus.preparing);
+
     try {
       final api = di.sl<ApiService>();
       await api.markOrderAsPreparing(orderId: order.id, token: token);
-      _fetchOrders();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Order is now preparing!'),
-            backgroundColor: Color(0xFF1967D2),
+            backgroundColor: Color(0xFFBB0018),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } on ApiException catch (e) {
+      // Revert on failure
+      _optimisticUpdateStatus(order, order.status);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -557,20 +682,24 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final token = _token;
     if (token == null) return;
 
+    // Optimistic update: move to Ready tab
+    _optimisticUpdateStatus(order, OrderStatus.outForDelivery);
+
     try {
       final api = di.sl<ApiService>();
       await api.markOrderAsReady(orderId: order.id, token: token);
-      _fetchOrders();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Order ready for pickup!'),
-            backgroundColor:          Color(0xFF1E8E3E),
+            backgroundColor: Color(0xFF1E8E3E),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } on ApiException catch (e) {
+      // Revert on failure
+      _optimisticUpdateStatus(order, order.status);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -614,6 +743,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final token = _token;
     if (token == null) return;
 
+    // Optimistic update: update problem status in-place
+    _updateProblemInPlace(problemId, status, adminNote: adminNote, refundAmount: refundAmount);
+
     try {
       final api = di.sl<ApiService>();
       await api.updateProblemStatus(
@@ -624,7 +756,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         token: token,
       );
       if (!mounted) return;
-      _fetchProblems();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Report ${status == 'APPROVED' ? 'approved' : 'rejected'}.'),
@@ -635,12 +766,34 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         ),
       );
     } on ApiException catch (e) {
+      // Revert on failure — restore original status by re-fetching
       if (!mounted) return;
+      _fetchProblems();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating),
       );
     }
+  }
+
+  /// Update a single problem's status in `_problems` in-place,
+  /// avoiding a full re-fetch that would show a loading spinner.
+  void _updateProblemInPlace(
+    String problemId,
+    String newStatus, {
+    String? adminNote,
+    double? refundAmount,
+  }) {
+    final idx = _problems.indexWhere((p) => p['id']?.toString() == problemId);
+    if (idx == -1) return;
+    _problems[idx] = {
+      ..._problems[idx],
+      'status': newStatus,
+      if (adminNote != null) 'admin_note': adminNote,
+      if (refundAmount != null) 'refund_amount': refundAmount,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    setState(() {});
   }
 
   // ── Time formatting ──────────────────────────
@@ -671,6 +824,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
     setState(() {
       _isSearching = true;
+      _isSearchLoading = true;
       _searchError = null;
     });
 
@@ -680,16 +834,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       if (!mounted) return;
       setState(() {
         _searchResults = rawOrders.map((o) => Order.fromJson(o)).toList();
+        _isSearchLoading = false;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _searchError = e.message;
+        _isSearchLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _searchError = 'Search failed.';
+        _isSearchLoading = false;
       });
     }
   }
@@ -698,6 +855,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     _searchController.clear();
     setState(() {
       _isSearching = false;
+      _isSearchLoading = false;
       _searchResults = [];
       _searchError = null;
     });
@@ -743,7 +901,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           });
         },
         decoration: InputDecoration(
-          hintText: 'Search by order #...',
+          hintText: 'Search orders...',
           hintStyle: const TextStyle(color: Color(0xFF999999), fontSize: 14),
           prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF999999)),
           suffixIcon: _searchController.text.isNotEmpty
@@ -761,7 +919,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFBB0018), width: 1.5),
+            borderSide: BorderSide.none,
           ),
         ),
         style: const TextStyle(fontSize: 14),
@@ -797,85 +955,71 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     height: 1.33,
                   ),
                 ),
-                const Spacer(),
-                // Settings gear → Manage Restaurant
-                GestureDetector(
+              ],
+            ),
+          ),
+          // Notification bell (top right)
+          Consumer<NotificationProvider>(
+            builder: (context, notifProvider, _) {
+              return Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                elevation: 4,
+                shadowColor: Colors.black26,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(30),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const ManageRestaurantScreen(),
+                        builder: (context) => const NotificationsScreen(),
                       ),
                     );
                   },
                   child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F0F0),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.settings_rounded,
-                      size: 20,
-                      color: Color(0xFF5C5C5C),
+                    width: 42,
+                    height: 42,
+                    padding: const EdgeInsets.all(2),
+                    child: Stack(
+                      children: [
+                        const Center(
+                          child: Icon(
+                            Icons.notifications_outlined,
+                            size: 22,
+                            color: Color(0xFF1A1C1C),
+                          ),
+                        ),
+                        if (notifProvider.hasUnread)
+                          Positioned(
+                            top: 2,
+                            right: 4,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF5222D),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${notifProvider.unreadCount}',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
-            ),
-          ),
-          _buildAcceptingIndicator(),
-          const SizedBox(width: 8),
-          ToggleSwitch(
-            value: _isAcceptingOrders,
-            onChanged: _toggleAcceptingOrders,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAcceptingIndicator() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _isAcceptingOrders
-            ? const Color(0xFFE6F4EA)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(9999),
-        border: Border.all(
-          color: _isAcceptingOrders
-              ? const Color(0xFF1E8E3E)
-              : const Color(0xFFD93025),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(
-              color: _isAcceptingOrders
-                  ? const Color(0xFF1E8E3E)
-                  : const Color(0xFFD93025),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            _isAcceptingOrders ? 'Accepting' : 'Paused',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: _isAcceptingOrders
-                  ? const Color(0xFF1E8E3E)
-                  : const Color(0xFFD93025),
-              height: 1.29,
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -892,7 +1036,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         height: 30,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: 4,
+          itemCount: 5,
           separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (context, index) {
             final tabs = [
@@ -900,6 +1044,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               ('Preparing', _preparingOrders.length),
               ('Ready', _readyOrders.length),
               ('Problems', _problems.length),
+              ('Support', _supportConversations.where((c) => c['status'] == 'OPEN').length),
             ];
             final (label, count) = tabs[index];
             final isActive = _selectedTab == index;
@@ -985,6 +1130,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     }
 
     if (_selectedTab == 3) return _buildProblemsTab();
+    if (_selectedTab == 4) return _buildSupportTab();
 
     if (_currentOrders.isEmpty) {
       return RefreshIndicator(
@@ -998,7 +1144,26 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_isSearching) ...[
+                    if (_isSearchLoading) ...[
+                      const SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Color(0xFFBB0018),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Searching orders...',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF8E8E93),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ] else if (_isSearching) ...[
                       const Icon(Icons.search_off_rounded,
                           size: 48, color: Color(0xFFD9D9D9)),
                       const SizedBox(height: 12),
@@ -1093,7 +1258,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       },
       child: Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1106,69 +1270,54 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header: Order # + status badge + time ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.receipt_long_rounded,
-                      size: 18, color: Color(0xFFBB0018)),
-                  const SizedBox(width: 8),
-                  Text(
-                    '#${order.orderNumber}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1A1C1C),
-                      height: 1.25,
-                    ),
-                  ),
-                ],
+          // ── Banner image (full width at top, clipped to card's corners) ──
+          if (order.items.isNotEmpty &&
+              order.items.first.imageUrl != null &&
+              order.items.first.imageUrl!.isNotEmpty)
+            SizedBox(
+              width: double.infinity,
+              height: 150,
+              child: Image.network(
+                order.items.first.imageUrl!,
+                width: double.infinity,
+                height: 150,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
-              Row(
-                children: [
-                  _buildStatusPillBadge(order.status),
-                  const SizedBox(width: 8),
-                  Text(
-                    _timeAgo(order.createdAt),
-                    style: const TextStyle(
-                      color: Color(0xFF5C5C5C),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      height: 1.38,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
 
-          const SizedBox(height: 12),
-
-          // ── Items ─────────────────────────────
-          ...order.items.take(3).map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          // ── Content section with 16px padding ──
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header: status badge + time ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          item.imageUrl!,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                        ),
+                    _buildStatusPillBadge(order.status),
+                    Text(
+                      _timeAgo(order.createdAt),
+                      style: const TextStyle(
+                        color: Color(0xFF5C5C5C),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 1.38,
                       ),
-                    if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
-                      const SizedBox(width: 10),
-                    Expanded(
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Items (text only, no prices) ─────
+                ...order.items.take(2).map((item) => Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 4),
                       child: Text(
                         '${item.quantity}x ${item.name}',
                         style: const TextStyle(
@@ -1177,143 +1326,84 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                           fontWeight: FontWeight.w500,
                           height: 1.29,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
+
+                if (order.items.length > 2)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 4),
+                    child: Text(
+                      '+${order.items.length - 2} more items',
+                      style: const TextStyle(
+                        color: Color(0xFF5C5C5C),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.38,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _formatCurrency(item.price * item.quantity),
-                      style: const TextStyle(
-                        fontSize: 14,
+                  ),
+
+                // ── Divider ──────────────────────────
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, color: Color(0xFFF0F0F0)),
+                ),
+
+                // ── Total ─────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF1A1C1C),
-                        height: 1.29,
+                        height: 1.25,
+                      ),
+                    ),
+                    Text(
+                      _formatCurrency(order.total),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFBB0018),
+                        height: 1.25,
                       ),
                     ),
                   ],
                 ),
-              )),
 
-          if (order.items.length > 3)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '+${order.items.length - 3} more items',
-                style: const TextStyle(
-                  color: Color(0xFF5C5C5C),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  height: 1.38,
-                ),
-              ),
-            ),
-
-          // ── Total ─────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1C1C),
-                  height: 1.25,
-                ),
-              ),
-              Text(
-                _formatCurrency(order.total),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFBB0018),
-                  height: 1.25,
-                ),
-              ),
-            ],
-          ),
-
-          // ── Special instructions ──────────────
-          if (order.specialInstructions != null &&
-              order.specialInstructions!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF8E1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFFE082)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      size: 14, color: Color(0xFFF9A825)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      order.specialInstructions!,
-                      style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF795548),
-                          fontWeight: FontWeight.w400,
-                          height: 1.38),
-                    ),
+                // ── Delivery address ──────────────────
+                if (order.deliveryAddress?.fullAddress != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('📍', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          order.deliveryAddress!.fullAddress!,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF5C5C5C),
+                              fontWeight: FontWeight.w400,
+                              height: 1.38),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ),
-          ],
 
-          // ── Delivery address ──────────────────
-          if (order.deliveryAddress?.fullAddress != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.location_on_outlined,
-                    size: 14, color: Color(0xFF5C5C5C)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    order.deliveryAddress!.fullAddress!,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF5C5C5C),
-                        fontWeight: FontWeight.w400,
-                        height: 1.38),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                const SizedBox(height: 16),
+
+                // ── Action buttons ────────────────────
+                _buildActionButtons(order),
               ],
             ),
-          ],
-
-          // ── Estimated prep time ───────────────
-          if (order.estimatedPrepTime != null) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.timer_outlined,
-                    size: 14, color: Color(0xFF5C5C5C)),
-                const SizedBox(width: 4),
-                Text(
-                  'Est. ${order.estimatedPrepTime} min',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF5C5C5C),
-                      fontWeight: FontWeight.w400,
-                      height: 1.38),
-                ),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: 16),
-
-          // ── Action buttons ────────────────────
-          _buildActionButtons(order),
+          ),
         ],
       ),
     ),
@@ -1333,8 +1423,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         textColor = const Color(0xFFBB0018);
         label = 'New';
       case OrderStatus.accepted:
-        bgColor = const Color(0xFFE8F0FE);
-        textColor = const Color(0xFF1967D2);
+        bgColor = const Color(0xFFFFF1F0);
+        textColor = const Color(0xFFBB0018);
         label = 'Accepted';
       case OrderStatus.preparing:
         bgColor = const Color(0xFFFFF8E1);
@@ -1345,8 +1435,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         textColor = const Color(0xFF1E8E3E);
         label = 'Ready';
       case OrderStatus.pickedUp:
-        bgColor = const Color(0xFFE8F0FE);
-        textColor = const Color(0xFF1967D2);
+        bgColor = const Color(0xFFFFF1F0);
+        textColor = const Color(0xFFBB0018);
         label = 'Picked Up';
       case OrderStatus.delivered:
         bgColor = const Color(0xFFE6F4EA);
@@ -1358,8 +1448,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         label = 'Cancelled';
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    return Container(        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(9999),
@@ -1452,7 +1541,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                         height: 1.29),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1967D2),
+                    backgroundColor: const Color(0xFFBB0018),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1522,12 +1611,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
               decoration: BoxDecoration(
                 color: isAssigned
-                    ? const Color(0xFFE8F0FE)
+                    ? const Color(0xFFFFF1F0)
                     : const Color(0xFFE6F4EA),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: isAssigned
-                      ? const Color(0xFF1967D2)
+                      ? const Color(0xFFBB0018)
                       : const Color(0xFF1E8E3E),
                   width: 0.5,
                 ),
@@ -1536,7 +1625,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 children: [
                   Icon(
                     isAssigned ? Icons.moped_rounded : Icons.check_circle,
-                    color: isAssigned ? const Color(0xFF1967D2) : const Color(0xFF1E8E3E),
+                    color: isAssigned ? const Color(0xFFBB0018) : const Color(0xFF1E8E3E),
                     size: 20,
                   ),
                   const SizedBox(width: 8),
@@ -1574,10 +1663,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F8FF),
+                  color: const Color(0xFFFFF8F8),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFF1967D2).withValues(alpha: 0.2),
+                    color: const Color(0xFFBB0018).withValues(alpha: 0.2),
                   ),
                 ),
                 child: Column(
@@ -1589,21 +1678,33 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       child: Row(
                         children: [
                           const Icon(Icons.my_location_rounded,
-                              size: 16, color: Color(0xFF1967D2)),
+                              size: 16, color: Color(0xFFBB0018)),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
-                              hasRiderLocation
-                                  ? etaMinutes != null
-                                      ? 'Rider ~$etaMinutes min away'
-                                      : 'Rider nearby'
-                                  : 'Loading rider location...',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1967D2),
-                              ),
-                            ),
+                            child: () {
+                              String statusText;
+                              if (!hasRiderLocation) {
+                                statusText = 'Loading rider location...';
+                              } else if (etaMinutes != null) {
+                                final distKm = _baatoEtaDistanceKm[order.id];
+                                final distStr = distKm != null && distKm > 0
+                                    ? distKm < 1
+                                        ? ' • ${(distKm * 1000).round()} m'
+                                        : ' • ${distKm.toStringAsFixed(1)} km'
+                                    : '';
+                                statusText = 'Rider ~$etaMinutes min$distStr away';
+                              } else {
+                                statusText = 'Rider nearby';
+                              }
+                              return Text(
+                                statusText,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFBB0018),
+                                ),
+                              );
+                            }(),
                           ),
                           if (hasRiderLocation)
                             Container(
@@ -1665,14 +1766,14 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: const BoxDecoration(
-                          color: Color(0xFFE8F0FE),
+                          color: Color(0xFFFFF1F0),
                           borderRadius: BorderRadius.vertical(
                               bottom: Radius.circular(12)),
                         ),
                         child: Row(
                           children: [
                             const Icon(Icons.access_time_rounded,
-                                size: 14, color: Color(0xFF1967D2)),
+                                size: 14, color: Color(0xFFBB0018)),
                             const SizedBox(width: 4),
                             Text(
                               etaMinutes <= 1
@@ -1726,7 +1827,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1967D2),
+                  backgroundColor: const Color(0xFFBB0018),
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: const Color(0xFFEFEDED),
                   disabledForegroundColor: const Color(0xFFBFBFBF),
@@ -1743,6 +1844,199 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  // ── Support Tab (Owner acts as support agent) ──
+
+  Widget _buildSupportTab() {
+    final openCount = _supportConversations.where((c) => c['status'] == 'OPEN').length;
+
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.headset_mic_rounded, color: Color(0xFFBB0018), size: 22),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Support Conversations',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1C1C))),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1F0),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$openCount',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFBB0018))),
+              ),
+            ],
+          ),
+        ),
+
+        Expanded(child: _buildSupportList()),
+      ],
+    );
+  }
+
+  Widget _buildSupportList() {
+    if (_isLoadingSupport) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            SizedBox(height: 16),
+            Text('Loading conversations...',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
+    if (_supportConversations.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.headset_mic_rounded, size: 56, color: Color(0xFFD9D9D9)),
+            const SizedBox(height: 12),
+            const Text('No support conversations yet',
+                style: TextStyle(color: Color(0xFF8E8E93), fontSize: 16, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      );
+    }
+
+    final openFirst = List<Map<String, dynamic>>.from(_supportConversations)
+      ..sort((a, b) {
+        final aOpen = a['status'] == 'OPEN' ? 0 : 1;
+        final bOpen = b['status'] == 'OPEN' ? 0 : 1;
+        if (aOpen != bOpen) return aOpen.compareTo(bOpen);
+        return (b['updated_at'] as String? ?? '').compareTo(a['updated_at'] as String? ?? '');
+      });
+
+    return RefreshIndicator(
+      onRefresh: _fetchSupportConversations,
+      color: const Color(0xFFBB0018),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        itemCount: openFirst.length,
+        itemBuilder: (context, index) => _buildSupportCard(openFirst[index]),
+      ),
+    );
+  }
+
+  Widget _buildSupportCard(Map<String, dynamic> conv) {
+    final status = conv['status'] as String? ?? 'OPEN';
+    final subject = conv['subject'] as String? ?? '';
+    final lastMsg = conv['last_message'] as Map<String, dynamic>?;
+    final msgCount = (conv['message_count'] as num?)?.toInt() ?? 0;
+    final userInfo = conv['user'] as Map<String, dynamic>?;
+    final userName = userInfo?['username'] as String? ?? 'Unknown';
+    final isOpen = status == 'OPEN';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SupportChatScreen(
+              conversationId: conv['id'] as String? ?? '',
+              subject: subject,
+              isAdmin: true,
+            ),
+          ),
+        ).then((_) => _silentRefreshSupport());
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: isOpen
+              ? Border.all(color: const Color(0xFFBB0018).withValues(alpha: 0.2))
+              : null,
+          boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8, offset: const Offset(0, 3),
+          )],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: isOpen ? const Color(0xFFFFF1F0) : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isOpen ? Icons.chat_rounded : Icons.check_circle_outlined,
+                color: isOpen ? const Color(0xFFBB0018) : const Color(0xFF8E8E93),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(subject,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1C1C)),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isOpen ? const Color(0xFFFFF1F0) : const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(isOpen ? 'Open' : 'Closed',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w600,
+                                color: isOpen ? const Color(0xFFBB0018) : const Color(0xFF8E8E93))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.person_outline, size: 13, color: const Color(0xFF8E8E93)),
+                      const SizedBox(width: 4),
+                      Text(userName,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+                      const SizedBox(width: 12),
+                      Icon(Icons.chat_bubble_outline, size: 12, color: const Color(0xFFBFBFBF)),
+                      const SizedBox(width: 3),
+                      Text('$msgCount msgs',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFFBFBFBF))),
+                    ],
+                  ),
+                  if (lastMsg != null) ...[
+                    const SizedBox(height: 4),
+                    Text(lastMsg['message'] as String? ?? '',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF5C5C5C)),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFFBFBFBF)),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Problems Tab ─────────────────────────────
@@ -1795,7 +2089,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final issueType = problem['issue_type'] as String? ?? '';
     final description = problem['description'] as String? ?? '';
     final customerName = problem['customer_name'] as String? ?? 'Unknown';
-    final orderNumber = problem['order_number'] as String? ?? '';
     final isPending = status == 'PENDING';
 
     final typeLabels = {
@@ -1882,7 +2175,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text('$customerName • Order $orderNumber',
+                    Text('$customerName',
                         style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
                   ],
                 ),
@@ -2356,7 +2649,7 @@ class _AssignDeliveryBoySheetState extends State<_AssignDeliveryBoySheet> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.add_circle_outline,
-                  color: Color(0xFF1967D2), size: 22),
+                  color: Color(0xFFBB0018), size: 22),
           onTap: _isAssigning
               ? null
               : () async {

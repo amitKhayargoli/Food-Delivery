@@ -43,6 +43,10 @@ class StepProgressIndicator extends StatelessWidget {
   /// Inactive text color for future step labels. Defaults to [Color(0xFFBFBFBF)].
   final Color inactiveTextColor;
 
+  /// Called when the user taps on a step indicator dot.
+  /// Provides the 0-indexed step index.
+  final ValueChanged<int>? onStepTapped;
+
   const StepProgressIndicator({
     super.key,
     required this.currentStep,
@@ -50,6 +54,7 @@ class StepProgressIndicator extends StatelessWidget {
     this.activeColor = const Color(0xFFF5222D),
     this.inactiveColor = const Color(0xFFE8E8E8),
     this.inactiveTextColor = const Color(0xFFBFBFBF),
+    this.onStepTapped,
   });
 
   @override
@@ -69,14 +74,17 @@ class StepProgressIndicator extends StatelessWidget {
                   color: currentStep >= i ? activeColor : inactiveColor,
                 ),
               ),
-            _StepDot(
-              number: steps[i].number,
-              label: steps[i].label,
-              isActive: currentStep >= i,
-              bold: currentStep == i,
-              activeColor: activeColor,
-              inactiveColor: inactiveColor,
-              inactiveTextColor: inactiveTextColor,
+            GestureDetector(
+              onTap: onStepTapped != null ? () => onStepTapped!(i) : null,
+              child: _StepDot(
+                number: steps[i].number,
+                label: steps[i].label,
+                isActive: currentStep >= i,
+                bold: currentStep == i,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
+                inactiveTextColor: inactiveTextColor,
+              ),
             ),
           ],
           const Spacer(),

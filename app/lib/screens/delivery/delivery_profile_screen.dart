@@ -440,6 +440,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
   }
 
   String _formatRole(String raw) {
+    if (raw == 'USER') return 'Customer';
     return raw
         .split('_')
         .map((w) => w.isNotEmpty

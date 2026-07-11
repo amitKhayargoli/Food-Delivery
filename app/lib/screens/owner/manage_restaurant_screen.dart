@@ -49,10 +49,6 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
   Timer? _searchDebounce;
   Timer? _mapReadyTimer;
 
-  // Toggle states
-  bool _autoDispatchEnabled = false;
-  bool _isTogglingAutoDispatch = false;
-
   // Loading / error states
   bool _isLoadingInitial = true;
   bool _isSaving = false;
@@ -160,8 +156,6 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
         _restaurantLat = (app['latitude'] as num?)?.toDouble();
         _restaurantLng = (app['longitude'] as num?)?.toDouble();
         _restaurantAddress = (app['address'] as String?) ?? '';
-
-        _autoDispatchEnabled = (app['auto_dispatch_enabled'] as bool?) ?? false;
 
         _originalApplication = app;
         _initialDataHash = _computeFormHash();
@@ -612,43 +606,6 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
           ),
 
           const SizedBox(height: 40),
-
-          // ── Delivery Settings Section ──
-          _buildSectionHeader('Delivery Settings'),
-          const SizedBox(height: 12),
-          _buildAutoDispatchToggle(),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFFE082)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.info_outline, size: 16, color: Color(0xFFF9A825)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _autoDispatchEnabled
-                        ? 'When enabled, the nearest available rider will be automatically assigned when you mark an order as Ready.'
-                        : 'Enable auto-dispatch to automatically find and assign the nearest rider when an order is ready.',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF795548),
-                      fontWeight: FontWeight.w400,
-                      height: 1.38,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 32),
 
           // ── Coupons Section ──
           _buildSectionHeader('Promotions & Coupons'),
@@ -1340,150 +1297,4 @@ class _ManageRestaurantScreenState extends State<ManageRestaurantScreen> {
     } catch (_) {}
   }
 
-  // ── Auto-Dispatch Toggle ─────────────────────
-
-  Widget _buildAutoDispatchToggle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _autoDispatchEnabled
-                  ? const Color(0xFFE6F4EA)
-                  : const Color(0xFFF0F0F0),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.route_rounded,
-              size: 22,
-              color: _autoDispatchEnabled
-                  ? const Color(0xFF1E8E3E)
-                  : const Color(0xFF8E8E93),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Auto-Assign Delivery Boy',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1C1C),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _autoDispatchEnabled
-                      ? 'Nearest rider assigned automatically'
-                      : 'Manual assignment',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF8E8E93),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _isTogglingAutoDispatch
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : GestureDetector(
-                  onTap: _toggleAutoDispatch,
-                  child: Container(
-                    width: 48,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      color: _autoDispatchEnabled
-                          ? const Color(0xFF1E8E3E)
-                          : const Color(0xFFE5E7EB),
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child: AnimatedAlign(
-                      duration: const Duration(milliseconds: 200),
-                      alignment: _autoDispatchEnabled
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0x1A000000),
-                              blurRadius: 4,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-        ],
-      ),
-    );
-  }
-
-  /// Toggle auto-dispatch on/off via API with optimistic UI.
-  Future<void> _toggleAutoDispatch() async {
-    final token = _token;
-    if (token == null) return;
-
-    final newValue = !_autoDispatchEnabled;
-    setState(() => _isTogglingAutoDispatch = true);
-
-    try {
-      final api = di.sl<ApiService>();
-      await api.toggleAutoDispatch(enabled: newValue, token: token);
-      if (mounted) {
-        setState(() {
-          _autoDispatchEnabled = newValue;
-          _isTogglingAutoDispatch = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              newValue
-                  ? 'Auto-dispatch enabled'
-                  : 'Auto-dispatch disabled',
-            ),
-            backgroundColor: const Color(0xFF1E8E3E),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        setState(() => _isTogglingAutoDispatch = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isTogglingAutoDispatch = false);
-      }
-    }
-  }
 }
