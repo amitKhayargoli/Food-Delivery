@@ -221,6 +221,16 @@ class _SelectAddressScreenState extends State<SelectAddressScreen>
     _updateLocation(coord, label: '${addr.label}, ${addr.address}');
   }
 
+  /// Whether the currently selected coordinate matches the device GPS location.
+  bool get _isShowingGpsLocation {
+    if (_gpsCoordinate == null) return false;
+    const tolerance = 0.0001; // ~10m precision
+    return (_selectedCoordinate.latitude - _gpsCoordinate!.latitude).abs() <
+            tolerance &&
+        (_selectedCoordinate.longitude - _gpsCoordinate!.longitude).abs() <
+            tolerance;
+  }
+
   // ── Use Current Location ──
 
   Future<void> _onUseCurrentLocation() async {
@@ -338,7 +348,12 @@ class _SelectAddressScreenState extends State<SelectAddressScreen>
       );
       _gpsCoordinate = coord;
 
-      if (_hasSelected) return;
+      if (_hasSelected) {
+        // Trigger a rebuild so _isShowingGpsLocation can evaluate
+        // whether the selected coordinate matches the GPS location.
+        if (mounted) setState(() {});
+        return;
+      }
 
       _mapController.cameraManager.moveTo(coord, zoom: 15.0, animate: true);
       _updateLocation(coord);
@@ -953,8 +968,7 @@ class _SelectAddressScreenState extends State<SelectAddressScreen>
   // ══════════════════════════════════════════════
 
   Widget _buildUseCurrentLocation() {
-    final isSelected = _hasSelected && _selectedSavedIndex == null &&
-        _searchController.text.isEmpty;
+    final isSelected = _isShowingGpsLocation;
 
     return GestureDetector(
       onTap: _onUseCurrentLocation,

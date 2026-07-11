@@ -9,6 +9,8 @@ import '../../core/services/api_service.dart';
 import '../../core/services/supabase_client_service.dart';
 import '../../core/services/baato_eta_service.dart';
 import '../../widgets/rider_map_view.dart';
+import '../../widgets/time_status_card.dart';
+import '../../widgets/rider_profile_card.dart';
 import '../../providers/auth_provider.dart';
 import '../../injection_container.dart' as di;
 import '../full_screen_map_screen.dart';
@@ -1074,6 +1076,28 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             if (showLiveMap && hasDropoffLocation && _liveRiderLocation != null)
               _buildLiveTrackingCard(etaText, distanceText),
 
+            // ── Time Status & Rider Profile (below the map) ──
+            if (showLiveMap && hasDropoffLocation && _liveRiderLocation != null) ...[
+              const SizedBox(height: 16),
+              TimeStatusCard(
+                etaMinutes: _etaMinutes ?? 0,
+                currentStatus: _order.status,
+              ),
+              const SizedBox(height: 12),
+              if (_order.deliveryBoyName != null &&
+                  _order.deliveryBoyName!.isNotEmpty)
+                RiderProfileCard(
+                  riderName: _order.deliveryBoyName!,
+                  avatarUrl: _order.deliveryBoyAvatarUrl,
+                  rating: 4.8,
+                  deliveryCount: 0,
+                  vehicleInfo: '',
+                  onCall: _order.deliveryBoyId != null ? _callRider : null,
+                  onMessage: null,
+                ),
+              const SizedBox(height: 16),
+            ],
+
             // ── Restaurant name ──
             if (_order.restaurantName.isNotEmpty)
               Padding(
@@ -1118,10 +1142,66 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
 
-            // ── Status card ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
+            // ── Rider Note (only shown when present) ──
+            if (_order.riderNote != null && _order.riderNote!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF1F0),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFFF5745).withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.chat_outlined,
+                          size: 14, color: Color(0xFFFF5745)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Rider: "${_order.riderNote}"',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFFF5745),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 12),
+
+            // ── Order Items ──
+            Row(
+              children: [
+                const Text(
+                  'Order Items',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1C1C),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_order.items.length} item${_order.items.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ..._order.items.map((item) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -1130,127 +1210,68 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     color: Color(0x141B1C1C),
                     blurRadius: 12,
                     offset: Offset(0, 4),
+                    spreadRadius: 0,
                   ),
                 ],
               ),
+              clipBehavior: Clip.antiAlias,
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _statusColor(_order.status).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          _statusLabel(_order.status),
-                          style: TextStyle(
-                            color: _statusColor(_order.status),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _formatCurrency(_order.total),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFF5222D),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (_order.riderNote != null && _order.riderNote!.isNotEmpty)
-                    Container(
+                  // ── Full-width banner image ──
+                  if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
+                    SizedBox(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F0FE),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFF1967D2).withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.chat_outlined,
-                              size: 14, color: Color(0xFF1967D2)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Rider: "${_order.riderNote}"',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF1967D2),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
+                      height: 150,
+                      child: Image.network(
+                        item.imageUrl!,
+                        width: double.infinity,
+                        height: 150,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
                       ),
                     ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ── Order items ──
-            const Text(
-              'Order Items',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1C1C),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ..._order.items.map((item) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  // ── Item details ──
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
                       children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${item.quantity}x ${item.name}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF1A1C1C),
+                                ),
+                              ),
+                              if (item.specialInstructions != null &&
+                                  item.specialInstructions!.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    item.specialInstructions!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                         Text(
-                          '${item.quantity}x ${item.name}',
+                          _formatCurrency(item.price * item.quantity),
                           style: const TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                             color: Color(0xFF1A1C1C),
                           ),
                         ),
-                        if (item.specialInstructions != null &&
-                            item.specialInstructions!.isNotEmpty)
-                          Text(
-                            item.specialInstructions!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF8E8E93),
-                            ),
-                          ),
                       ],
-                    ),
-                  ),
-                  Text(
-                    _formatCurrency(item.price * item.quantity),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1C1C),
                     ),
                   ),
                 ],
@@ -1292,6 +1313,48 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
             ],
+
+            // ── Status & Total (simple inline, no card) ──
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: _statusColor(_order.status).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _statusLabel(_order.status),
+                    style: TextStyle(
+                      color: _statusColor(_order.status),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 1,
+                    height: 14,
+                    color: _statusColor(_order.status).withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatCurrency(_order.total),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFF5222D),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
 
             // ── Delivery Photo Proof ──
             if (_order.deliveryPhotoUrl != null && _order.deliveryPhotoUrl!.isNotEmpty) ...[
@@ -1687,19 +1750,23 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 const Spacer(),
                 if (etaText != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F0FE),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      etaText,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1967D2),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F0FE),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        etaText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1967D2),
+                        ),
                       ),
                     ),
                   ),

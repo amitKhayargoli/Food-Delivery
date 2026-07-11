@@ -10,12 +10,14 @@ import '../../providers/auth_provider.dart';
 class SupportChatScreen extends StatefulWidget {
   final String conversationId;
   final String subject;
+  final String? restaurantName;
   final bool isAdmin;
 
   const SupportChatScreen({
     super.key,
     required this.conversationId,
     required this.subject,
+    this.restaurantName,
     this.isAdmin = false,
   });
 
@@ -145,11 +147,22 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
 
     try {
       final api = di.sl<ApiService>();
-      await api.sendSupportMessage(
+      final createdMsg = await api.sendSupportMessage(
         conversationId: widget.conversationId,
         message: text,
         token: token,
       );
+
+      // Optimistically add the sent message to the list immediately,
+      // so the user sees it without waiting for Realtime.
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _messages.add(createdMsg);
+        });
+        _scrollToBottom();
+      }
+      return;
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSending = false);
@@ -159,9 +172,6 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
       );
       return;
     }
-
-    if (!mounted) return;
-    setState(() => _isSending = false);
   }
 
   Future<void> _closeConversation() async {
@@ -254,9 +264,13 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                 ],
               ],
             ),
-            Text(widget.subject,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93)),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(
+              widget.restaurantName != null
+                  ? '${widget.subject} • ${widget.restaurantName}'
+                  : widget.subject,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93)),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
         actions: [

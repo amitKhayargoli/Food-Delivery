@@ -51,7 +51,7 @@ if [ $# -lt 1 ]; then
   exit 1
 fi
 
-RIDER_ID="$1"
+RIDER_ID="22435cb4-53b5-4317-9674-806bdb62fda9"
 
 # ── Route: Byasi → Merina ───────────────────────────────────────────────
 # Byasi (near Doko Fresh Juice Corner, Bhaktapur)

@@ -113,8 +113,10 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 
     final cart = ref.read(cartStateProvider);
     final subtotal = cart.subtotal;
+    const double freeDeliveryThreshold = 500.0;
     final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
-    final deliveryFee = restaurantIds.length * 50.0;
+    final isFreeDelivery = subtotal >= freeDeliveryThreshold;
+    final deliveryFee = isFreeDelivery ? 0.0 : restaurantIds.length * 50.0;
     final discount = widget.couponDiscount;
     final total = subtotal + deliveryFee - discount;
 
@@ -203,8 +205,10 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(cartStateProvider);    final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
-    final deliveryFee = restaurantIds.length * 50.0;
+    final double freeDeliveryThreshold = 500.0;
     final subtotal = cart.subtotal;
+    final isFreeDelivery = subtotal >= freeDeliveryThreshold;
+    final deliveryFee = isFreeDelivery ? 0.0 : restaurantIds.length * 50.0;
     final discount = widget.couponDiscount;
     final total = subtotal + deliveryFee - discount;
 
@@ -659,24 +663,47 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            // Delivery Fee row
+            // Delivery Fee row (with FREE badge)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Delivery Fee',
-                  style: TextStyle(
-                    color: Color(0xFF5D3F3C),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                  ),
+                Row(
+                  children: [
+                    const Text(
+                      'Delivery Fee',
+                      style: TextStyle(
+                        color: Color(0xFF5D3F3C),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    if (deliveryFee == 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF52C41A).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'FREE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF52C41A),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
-                  'रु${deliveryFee.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Color(0xFFF5222D),
+                  deliveryFee > 0 ? 'रु${deliveryFee.toStringAsFixed(2)}' : 'FREE',
+                  style: TextStyle(
+                    color: deliveryFee == 0 ? const Color(0xFF52C41A) : const Color(0xFFF5222D),
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: deliveryFee == 0 ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
               ],
@@ -711,7 +738,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
             // Confirm Order button
             SizedBox(
               width: double.infinity,
-              height: 56,
+              height: 50,
               child: ElevatedButton(
                 onPressed: _confirmOrder,
                 style: ElevatedButton.styleFrom(
@@ -726,7 +753,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                 child: const Text(
                   'Confirm Order',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

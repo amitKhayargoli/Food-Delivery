@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../injection_container.dart' as di;
+import '../../models/order.dart';
+import '../../core/services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
+import 'user/order_detail_screen.dart';
+import 'user/support_chat_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -132,11 +137,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final token = _token;
 
     return GestureDetector(
-      onTap: () {
-        if (token != null && !notification.isRead) {
-          provider.markAsRead(notification.id, token);
-        }
-      },
+      onTap: () => _onNotificationTap(notification, token),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(14),
@@ -241,22 +242,85 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  /// Standard notification icon used for all notification types.
   IconData _iconForType(String type) {
-    switch (type) {
-      case 'order_update':
-        return Icons.receipt_long_rounded;
-      case 'order_cancelled':
-        return Icons.cancel_outlined;
-      case 'promotion':
-        return Icons.local_offer_rounded;
-      case 'rider_declined':
-      case 'rider_timeout':
-      case 'reassignment_failed':
-        return Icons.moped_rounded;
-      case 'role_change':
-        return Icons.swap_horiz_rounded;
-      default:
-        return Icons.notifications_active_rounded;
+    return Icons.notifications_active_rounded;
+  }
+
+  /// Handle tapping a notification — navigate to the relevant screen.
+  Future<void> _onNotificationTap(
+    AppNotification notification,
+    String? token,
+  ) async {
+    // Mark as read first
+    if (token != null && !notification.isRead) {
+      context.read<NotificationProvider>().markAsRead(notification.id, token);
+    }
+
+    // Extract navigation data
+    final data = notification.data;
+    final orderId = data['order_id'] as String?;
+    final conversationId = data['conversation_id'] as String?;
+    final problemId = data['problem_id'] as String?;
+    // Priority 1: Navigate to support chat if we have a conversation_id
+    if (conversationId != null && conversationId.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SupportChatScreen(
+            conversationId: conversationId,
+            subject: notification.title,
+            restaurantName: data['restaurant_name'] as String?,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Priority 2: Navigate to order detail if we have an order_id
+    if (orderId != null && orderId.isNotEmpty) {
+      await _navigateToOrder(orderId, type: notification.type);
+      return;
+    }
+
+    // Priority 3: Navigate to order detail with problem_id
+    if (problemId != null && problemId.isNotEmpty && orderId != null) {
+      await _navigateToOrder(orderId, type: notification.type);
+      return;
+    }
+  }
+
+  /// Fetch an order by ID and navigate to [OrderDetailScreen].
+  /// Falls back silently if the order can't be fetched.
+  Future<void> _navigateToOrder(String orderId, {String? type}) async {
+    if (_token == null) return;
+
+    try {
+      final api = di.sl<ApiService>();
+      final orderData = await api.getOrderById(
+        orderId: orderId,
+        token: _token!,
+      );
+
+      if (orderData == null || !mounted) return;
+
+      final order = Order.fromJson(orderData);
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderDetailScreen(
+            order: order,
+            isOwner: type == 'rider_declined' ||
+                type == 'rider_timeout' ||
+                type == 'reassignment_failed',
+          ),
+        ),
+      );
+    } catch (_) {
+      // Silently handle — user can still navigate manually
     }
   }
 

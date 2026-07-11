@@ -236,7 +236,7 @@ class _OwnerReviewsScreenState extends State<OwnerReviewsScreen> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(images[i], width: 72, height: 72, fit: BoxFit.cover,

@@ -102,17 +102,115 @@ class CartScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: _buildAppBar(context, ref, true),
-      body: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 160),
-        itemCount: groupedItems.length,
-        itemBuilder: (context, index) {
-          final restaurantId = groupedItems.keys.elementAt(index);
-          final items = groupedItems[restaurantId]!;
-          final restaurantName = restaurantNames[restaurantId]!;
-          return _buildRestaurantGroup(
-              context, ref, restaurantName, items, cart);
-        },
+      body: CustomScrollView(
+        slivers: [
+          // ── Scroll-hiding app bar ──
+          SliverAppBar(
+            pinned: false,
+            floating: true,
+            snap: true,
+            toolbarHeight: 56,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            scrolledUnderElevation: 2,
+            shadowColor: const Color(0x0C000000),
+            automaticallyImplyLeading: false,
+            flexibleSpace: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () async {
+                        if (context.mounted) Navigator.maybePop(context);
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            size: 16, color: Color(0xFF1A1A1A)),
+                      ),
+                    ),
+                    const Spacer(),
+                    const Text('My Cart',
+                        style: TextStyle(
+                            color: Color(0xFF1A1A1A),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () =>
+                          ref.read(cartStateProvider.notifier).clearCart(),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1F0),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.delete_outline,
+                            size: 18, color: Color(0xFFF5222D)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // ── Free Delivery Banner (inside item list) ──
+          if (cart.subtotal >= 500)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6FFED),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFB7EB8F)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded,
+                          size: 16, color: const Color(0xFF52C41A)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Free delivery is active on this order',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF389E0D),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // ── Cart items ──
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 160),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final restaurantId = groupedItems.keys.elementAt(index);
+                  final items = groupedItems[restaurantId]!;
+                  final restaurantName = restaurantNames[restaurantId]!;
+                  return _buildRestaurantGroup(
+                      context, ref, restaurantName, items, cart);
+                },
+                childCount: groupedItems.length,
+              ),
+            ),
+          ),
+        ],
       ),
       bottomSheet: _buildBottomBar(context, ref, cart),
     );
@@ -129,13 +227,6 @@ class CartScreen extends ConsumerWidget {
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0C000000),
-              blurRadius: 2,
-              offset: Offset(0, 1),
-            ),
-          ],
         ),
         child: SafeArea(
           bottom: false,
@@ -501,7 +592,7 @@ class CartScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 4),
-            // Item count
+            // Item count + Free Delivery indicator
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -513,9 +604,81 @@ class CartScreen extends ConsumerWidget {
                     fontWeight: FontWeight.w400,
                   ),
                 ),
+                if (cart.subtotal >= 500)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF52C41A).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.local_shipping_rounded,
+                            size: 12, color: Color(0xFF52C41A)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Free Delivery',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF52C41A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 14),
+            // ── Free Delivery Reminder Banner ──
+            if (cart.subtotal < 500) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFFE082)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.local_shipping_rounded,
+                        size: 16, color: Color(0xFFF9A825)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Add रु${(500 - cart.subtotal).toStringAsFixed(0)} more for free delivery',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF795548),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          // Progress bar
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: cart.subtotal / 500,
+                              backgroundColor: const Color(0xFFFFE082),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Color(0xFFF9A825)),
+                              minHeight: 4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else
+              const SizedBox(height: 14),
             // Proceed to Checkout
             GestureDetector(
               onTap: () => Navigator.push(

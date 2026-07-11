@@ -185,10 +185,50 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           // ── Item Total ──
           _buildRow('Item Total', 'रु${subtotal.toStringAsFixed(0)}'),
           const SizedBox(height: 10),
-          // ── Delivery Fee ──
-          _buildRow(
-            'Delivery Fee',
-            deliveryFee > 0 ? 'रु${deliveryFee.toStringAsFixed(0)}' : 'रु0',
+          // ── Delivery Fee (with Free Delivery badge) ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Delivery Fee',
+                    style: TextStyle(
+                      color: Color(0xFF5E3F3C),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  if (deliveryFee == 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF52C41A).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'FREE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF52C41A),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              Text(
+                deliveryFee > 0 ? 'रु${deliveryFee.toStringAsFixed(0)}' : 'रु0',
+                style: TextStyle(
+                  color: deliveryFee == 0 ? const Color(0xFF52C41A) : const Color(0xFF5E3F3C),
+                  fontSize: 14,
+                  fontWeight: deliveryFee == 0 ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           // ── Coupon Discount ──
@@ -481,9 +521,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         final hasCoupon = _couponProvider.hasAppliedCoupon;
         final discount = _couponProvider.discountAmount;
 
-        // Calculate delivery fee per restaurant (Rs 50 each for now)
+        // Calculate delivery fee (Rs 50 per restaurant, free if subtotal >= Rs 500)
+        final double freeDeliveryThreshold = 500.0;
         final restaurantIds = cart.items.values.map((i) => i.restaurantId).toSet();
-        final deliveryFee = restaurantIds.length * 50.0;
+        final isFreeDelivery = cart.subtotal >= freeDeliveryThreshold;
+        final deliveryFee = isFreeDelivery ? 0.0 : restaurantIds.length * 50.0;
         final total = cart.subtotal + deliveryFee - discount;
 
         return Scaffold(
@@ -716,14 +758,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
             ),
             child: SafeArea(
-              child: ElevatedButton(
-                onPressed: _placeOrder,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.white,
+              child: GestureDetector(
+                onTap: _placeOrder,
+                child: Container(
+                  width: double.infinity,
+                  height: 50,
+                  decoration: const ShapeDecoration(
+                    color: Color(0xFFF5222D),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Place Order',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
-                child: const Text('Place Order', style: TextStyle(fontSize: 16)),
               ),
             ),
           ),

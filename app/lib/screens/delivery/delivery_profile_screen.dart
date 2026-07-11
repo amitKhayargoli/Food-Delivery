@@ -65,7 +65,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE5E7EB),
+                  color: const Color(0xFFE8E8E8),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -79,12 +79,12 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
               ),
               const SizedBox(height: 20),
               ListTile(
-                leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFFBB0018)),
+                leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFFF5222D)),
                 title: const Text('Take Photo'),
                 onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
               ),
               ListTile(
-                leading: const Icon(Icons.photo_library_rounded, color: Color(0xFFBB0018)),
+                leading: const Icon(Icons.photo_library_rounded, color: Color(0xFFF5222D)),
                 title: const Text('Choose from Gallery'),
                 onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
               ),
@@ -155,7 +155,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
         messenger.showSnackBar(
           const SnackBar(
             content: Text('Profile photo updated!'),
-            backgroundColor: Color(0xFF22C55E),
+            backgroundColor: Color(0xFF52C41A),
           ),
         );
       }
@@ -174,7 +174,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
     final auth = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAF9F9),
+      backgroundColor: const Color(0xFFFFFFFF),
       appBar: AppBar(
         title: const Text(
           'My Profile',
@@ -182,7 +182,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1A1C1C),
+        foregroundColor: const Color(0xFF1A1A1A),
         elevation: 0.5,
       ),
       body: _buildBody(auth),
@@ -195,7 +195,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            CircularProgressIndicator(color: Color(0xFFF5222D)),
             SizedBox(height: 16),
             Text('Loading profile...',
                 style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
@@ -210,7 +210,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
 
     return RefreshIndicator(
       onRefresh: _fetchStats,
-      color: const Color(0xFFBB0018),
+      color: const Color(0xFFF5222D),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -251,11 +251,11 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(5),
                             decoration: ShapeDecoration(
-                              color: const Color(0xFFBB0018),
+                              color: const Color(0xFFF5222D),
                               shape: RoundedRectangleBorder(
                                 side: const BorderSide(
                                   width: 2,
-                                  color: Color(0xFFFAF9F9),
+                                  color: Color(0xFFFFFFFF),
                                 ),
                                 borderRadius: BorderRadius.circular(9999),
                               ),
@@ -282,14 +282,14 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1A1C1C),
+                    color: Color(0xFF1A1A1A),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE6F4EA),
+                    color: const Color(0xFFF6FFED),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: const Text(
@@ -297,7 +297,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E8E3E),
+                      color: Color(0xFF52C41A),
                     ),
                   ),
                 ),
@@ -311,7 +311,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
           const Text("Today's Performance",
               style: TextStyle(
                   fontSize: 18, fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1C1C))),
+                  color: Color(0xFF1A1A1A))),
           const SizedBox(height: 12),
 
           Row(
@@ -321,7 +321,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                   icon: Icons.check_circle_rounded,
                   label: 'Deliveries',
                   value: '$deliveries',
-                  color: const Color(0xFF1E8E3E),
+                  color: const Color(0xFF52C41A),
                 ),
               ),
               const SizedBox(width: 12),
@@ -330,7 +330,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
                   icon: Icons.route_rounded,
                   label: 'Distance',
                   value: '${distance.toStringAsFixed(1)} km',
-                  color: const Color(0xFF1967D2),
+                  color: const Color(0xFFFF5745),
                 ),
               ),
             ],
@@ -340,7 +340,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
             icon: Icons.account_balance_wallet_rounded,
             label: 'Today\'s Earnings',
             value: 'Rs. ${earnings.toStringAsFixed(0)}',
-            color: const Color(0xFFBB0018),
+            color: const Color(0xFFF5222D),
             large: true,
           ),
 
@@ -394,8 +394,8 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
               label: const Text('Logout',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFBB0018),
-                side: const BorderSide(color: Color(0xFFBB0018)),
+                foregroundColor: const Color(0xFFF5222D),
+                side: const BorderSide(color: Color(0xFFF5222D)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -432,7 +432,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
     return Text(
       (auth.username ?? 'R').substring(0, 1).toUpperCase(),
       style: const TextStyle(
-        color: Color(0xFFBB0018),
+        color: Color(0xFFF5222D),
         fontWeight: FontWeight.w700,
         fontSize: 28,
       ),
@@ -462,7 +462,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFE8E8E8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -506,7 +506,7 @@ class _DeliveryProfileScreenState extends State<DeliveryProfileScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFBB0018)),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFF5222D)),
             child: const Text('Logout'),
           ),
         ],

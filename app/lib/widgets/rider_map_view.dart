@@ -540,12 +540,16 @@ class _RiderMapViewState extends State<RiderMapView> {
                     const Text('🛵', style: TextStyle(fontSize: 14)),
                     const SizedBox(width: 4),
                     if (widget.etaText != null)
-                      Text(
-                        widget.etaText!,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1C1C),
+                      Flexible(
+                        child: Text(
+                          widget.etaText!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1C1C),
+                          ),
                         ),
                       ),
                     if (widget.etaText != null && widget.distanceText != null) ...[
@@ -554,11 +558,15 @@ class _RiderMapViewState extends State<RiderMapView> {
                       const SizedBox(width: 8),
                     ],
                     if (widget.distanceText != null)
-                      Text(
-                        widget.distanceText!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
+                      Flexible(
+                        child: Text(
+                          widget.distanceText!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                          ),
                         ),
                       ),
                     const Spacer(),

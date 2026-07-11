@@ -203,8 +203,8 @@ class _OwnerReportsScreenState extends State<OwnerReportsScreen> {
     _reports[idx] = {
       ..._reports[idx],
       'status': newStatus,
-      if (adminNote != null) 'admin_note': adminNote,
-      if (refundAmount != null) 'refund_amount': refundAmount,
+      'admin_note': ?adminNote,
+      'refund_amount': ?refundAmount,
       'updated_at': DateTime.now().toIso8601String(),
     };
     setState(() {});

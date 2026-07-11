@@ -1577,7 +1577,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   children: [
                     const Text(
                       'Order',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
                         color: Color(0xFF1A1C1C),

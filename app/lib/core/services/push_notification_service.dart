@@ -95,12 +95,16 @@ class PushNotificationService {
   }
 
   /// Handle a push notification received while the app is in the foreground.
+  /// Does NOT auto-navigate — navigating on every status change (ACCEPTED →
+  /// PREPARING → OUT_FOR_DELIVERY → PICKED_UP → DELIVERED) would be jarring.
+  /// Navigation only happens when the user taps the notification
+  /// (see [_handleNotificationTap]). The in-app toast/notification is handled
+  /// by NotificationProvider via the Realtime subscription.
   void _handleForegroundMessage(RemoteMessage message) {
-    // Navigate to the relevant screen based on notification type
-    _navigateToDeepLink(message.data);
-
+    debugPrint('[PushNotification] 📩 Foreground message: type=${message.data['type']}');
     // Toast is handled by NotificationProvider via Realtime subscription.
-    // The FCM handler only handles deep-link navigation.
+    // The FCM handler only handles deep-link navigation on tap.
+    // Foreground messages do NOT auto-navigate.
   }
 
   /// Handle the user tapping a notification that launched/brought the app

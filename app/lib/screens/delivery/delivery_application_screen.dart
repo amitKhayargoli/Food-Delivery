@@ -329,7 +329,7 @@ class _DeliveryApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Row(
           children: [
             GestureDetector(
@@ -389,7 +389,7 @@ class _DeliveryApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         const StepProgressIndicator(
           currentStep: 0,
           steps: [
@@ -398,7 +398,7 @@ class _DeliveryApplicationScreenState
             StepInfo(number: '3', label: 'Submit'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(24),
@@ -424,7 +424,7 @@ class _DeliveryApplicationScreenState
                   }
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               _buildFieldLabel('Email Address'),
               const SizedBox(height: 4),
               _buildTextField(
@@ -438,7 +438,7 @@ class _DeliveryApplicationScreenState
                   }
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               const SizedBox(
                 width: double.infinity,
                 child: Text(
@@ -534,7 +534,7 @@ class _DeliveryApplicationScreenState
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -547,7 +547,7 @@ class _DeliveryApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Row(
           children: [
             GestureDetector(
@@ -609,7 +609,7 @@ class _DeliveryApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         const StepProgressIndicator(
           currentStep: 1,
           steps: [
@@ -618,7 +618,7 @@ class _DeliveryApplicationScreenState
             StepInfo(number: '3', label: 'Submit'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -702,13 +702,13 @@ class _DeliveryApplicationScreenState
               ),
               const SizedBox(height: 4),
               _buildProfileUploadArea(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Action buttons
               _buildVehicleActionButtons(),
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1045,7 +1045,7 @@ class _DeliveryApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Row(
           children: [
             GestureDetector(
@@ -1105,7 +1105,7 @@ class _DeliveryApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         const StepProgressIndicator(
           currentStep: 2,
           steps: [
@@ -1114,7 +1114,7 @@ class _DeliveryApplicationScreenState
             StepInfo(number: '3', label: 'Submit'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1192,7 +1192,7 @@ class _DeliveryApplicationScreenState
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Error message
         if (_error != null)
           Padding(
@@ -1309,7 +1309,7 @@ class _DeliveryApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1358,7 +1358,7 @@ class _DeliveryApplicationScreenState
           children: [
             const SizedBox(height: 48),
             const Icon(Icons.check_circle, size: 80, color: Color(0xFF4CAF50)),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             const Text(
               'Application Submitted!',
               textAlign: TextAlign.center,

@@ -71,6 +71,18 @@ export const createConversation = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Fetch restaurant name if linked to a restaurant
+    let restaurantName: string | null = null;
+    if (restaurantId) {
+      const { data: app } = await supabase.admin
+        .from('restaurant_applications')
+        .select('restaurant_name')
+        .eq('id', restaurantId)
+        .maybeSingle();
+
+      restaurantName = app?.restaurant_name || null;
+    }
+
     // Notify the relevant users about the new conversation
     if (restaurantId) {
       // Notify the specific restaurant owner
@@ -107,7 +119,10 @@ export const createConversation = async (req: Request, res: Response): Promise<v
 
     res.status(201).json({
       message: 'Conversation created.',
-      conversation,
+      conversation: {
+        ...conversation,
+        restaurant_name: restaurantName,
+      },
     });
   } catch (error) {
     console.error('Create conversation error:', error);
@@ -139,6 +154,23 @@ export const getMyConversations = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Batch-fetch restaurant names for any conversations with restaurant_id
+    const restaurantIds = [...new Set((conversations || [])
+      .map((c: any) => c.restaurant_id)
+      .filter(Boolean))] as string[];
+
+    const restaurantNameMap = new Map<string, string>();
+    if (restaurantIds.length > 0) {
+      const { data: apps } = await supabase.admin
+        .from('restaurant_applications')
+        .select('id, restaurant_name')
+        .in('id', restaurantIds);
+
+      for (const app of apps || []) {
+        restaurantNameMap.set(app.id, app.restaurant_name);
+      }
+    }
+
     // Fetch last message and unread count for each conversation
     const conversationsWithMeta = await Promise.all(
       (conversations || []).map(async (conv: any) => {
@@ -161,6 +193,7 @@ export const getMyConversations = async (req: Request, res: Response): Promise<v
           ...conv,
           last_message: lastMsg || null,
           unread_count: unreadCount || 0,
+          restaurant_name: conv.restaurant_id ? (restaurantNameMap.get(conv.restaurant_id) || null) : null,
         };
       }),
     );

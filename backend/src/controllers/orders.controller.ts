@@ -117,6 +117,8 @@ function getUserRole(req: Request): string | null {
 // POST /api/orders
 // Create a new order (customer checkout)
 // ──────────────────────────────────────────────
+const FREE_DELIVERY_THRESHOLD = 500;
+
 export const createOrder = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = await getUserId(req);
@@ -141,6 +143,16 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       res.status(400).json({ error: 'restaurant_id and items are required.' });
       return;
     }
+
+    // Server-side free delivery enforcement
+    // If subtotal >= Rs. 500, delivery is free regardless of what the client sends
+    const originalDeliveryFee = delivery_fee || 0;
+    const finalSubtotal = subtotal || 0;
+    const finalDeliveryFee = finalSubtotal >= FREE_DELIVERY_THRESHOLD ? 0 : originalDeliveryFee;
+    // Adjust total by the delivery fee difference to preserve any coupon discount
+    const originalTotal = total || (finalSubtotal + originalDeliveryFee);
+    const finalTotal = originalTotal - originalDeliveryFee + finalDeliveryFee;
+
 
     // Validate delivery_address coordinates if provided
     if (delivery_address) {
@@ -175,7 +187,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
 
     const now = new Date().toISOString();
 
-    // Insert the order
+    // Insert the order (uses server-calculated values to enforce free delivery)
     const { data: order, error: orderError } = await supabase.admin
       .from('orders')
       .insert({
@@ -183,9 +195,9 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
         restaurant_id,
         order_number: orderNumber,
         status: 'CREATED',
-        subtotal: subtotal || 0,
-        delivery_fee: delivery_fee || 0,
-        total: total || 0,
+        subtotal: finalSubtotal,
+        delivery_fee: finalDeliveryFee,
+        total: finalTotal,
         delivery_address: delivery_address ? JSON.stringify(delivery_address) : null,
         delivery_notes: delivery_notes || null,
         payment_method: payment_method || 'COD',

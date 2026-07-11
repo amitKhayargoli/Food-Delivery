@@ -77,12 +77,13 @@ async function goOnline(userId: string) {
   const now = new Date().toISOString();
 
   // Upsert into rider_locations with is_online = true
+  // Default location: Madhyapur Thimi / Byasi (Bhaktapur)
   const { error } = await admin
     .from('rider_locations')
     .upsert({
       user_id: userId,
-      latitude: 27.7172,
-      longitude: 85.3240,
+      latitude: 27.6805,
+      longitude: 85.3870,
       is_online: true,
       is_on_delivery: false,
       last_active_at: now,

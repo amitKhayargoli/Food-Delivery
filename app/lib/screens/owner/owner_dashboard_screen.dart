@@ -819,8 +819,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     _problems[idx] = {
       ..._problems[idx],
       'status': newStatus,
-      if (adminNote != null) 'admin_note': adminNote,
-      if (refundAmount != null) 'refund_amount': refundAmount,
+      'admin_note': ?adminNote,
+      'refund_amount': ?refundAmount,
       'updated_at': DateTime.now().toIso8601String(),
     };
     setState(() {});
@@ -2205,7 +2205,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text('$customerName',
+                    Text(customerName,
                         style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
                   ],
                 ),

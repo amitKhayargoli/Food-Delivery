@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../state_providers.dart';
 import '../../widgets/delivery_location_header.dart';
 import 'restaurant_menu_screen.dart';
+import 'favorites_screen.dart';
 
 class UserHomeScreen extends ConsumerStatefulWidget {
   const UserHomeScreen({super.key});
@@ -27,7 +28,6 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
 
   /// Personalized suggestions data
   List<Map<String, dynamic>> _favoriteRestaurants = [];
-  List<Map<String, dynamic>> _recentRestaurants = [];
 
   /// Time-of-day greeting & suggestions data (lazily fetched + cached).
   String _greeting = TimeOfDayUtil.greeting();
@@ -99,11 +99,8 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
         if (!mounted) return;
         final favRestaurants = (personalized['favorite_restaurants'] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
-        final recentRestaurants = (personalized['recent_restaurants'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
         setState(() {
           _favoriteRestaurants = favRestaurants;
-          _recentRestaurants = recentRestaurants;
         });
       } catch (_) {}
     } catch (e) {
@@ -131,13 +128,17 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
     final personalizedEnabled = feedPrefs.personalizedSuggestionsEnabled;
 
     // Filter restaurants by the current time-of-day
+    // Matches both by food-item category and by restaurant cuisine type
     final period = _currentPeriod;
     final timeMatched = allRestaurants
         .map((r) => (
               r,
               r.foods.where((f) => TimeOfDayUtil.categoryMatches(f.categoryId, period)).toList(),
             ))
-        .where((pair) => pair.$2.isNotEmpty)
+        .where((pair) =>
+          pair.$2.isNotEmpty ||
+          TimeOfDayUtil.cuisineMatches(pair.$1.cuisineType, period),
+        )
         .toList();
     final hasTimeSuggestions = timeMatched.isNotEmpty && timeOfDayEnabled;
 
@@ -188,21 +189,21 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                 // ── Time-of-Day Greeting ──
                 if (timeOfDayEnabled) _buildTimeGreeting(context),
 
-                // ── Order Again Section (only if recent restaurants exist + toggle on) ──
-                if (_recentRestaurants.isNotEmpty && personalizedEnabled) ...[
-                  _buildOrderAgain(context),
-                ],
-
                 // ── Promo Banner ──
                 _buildPromoBanner(context),
+
+                // ── Surprise Me Button ──
+                _buildSurpriseMeButton(context),
+
+                // ── Quick Reorder Section (individual food items from recent orders) ──
+                if (_recentOrders.isNotEmpty && personalizedEnabled) ...[
+                  _buildQuickReorder(context, cartProvider),
+                ],
 
                 // ── Your Favourites Section (only if data exists + toggle on) ──
                 if (_favoriteRestaurants.isNotEmpty && personalizedEnabled) ...[
                   _buildYourFavourites(context),
                 ],
-
-                // ── Surprise Me Button ──
-                _buildSurpriseMeButton(context),
 
                 // ── Loading / Error / Restaurants ──
                 if (isLoading && allRestaurants.isEmpty)
@@ -444,6 +445,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
   Widget _buildBecauseYouOrdered(BuildContext context, CartProvider cart) {
     // Use the most recent delivered order to personalize
     final latestOrder = _recentOrders.first;
+    if (latestOrder.items.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -582,10 +584,25 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
     );
   }
 
-  // ── Order Again Section ──
+  // ── Quick Reorder Section ──
 
-  Widget _buildOrderAgain(BuildContext context) {
-    final restaurants = _recentRestaurants.take(4).toList();
+  Widget _buildQuickReorder(BuildContext context, CartProvider cart) {
+    // Collect unique food items from all recent orders (up to 8 items)
+    final allItems = <_QuickReorderItem>[];
+    final seenFoodIds = <String>{};
+    for (final order in _recentOrders) {
+      for (final item in order.items) {
+        if (seenFoodIds.add(item.foodId)) {
+          allItems.add(_QuickReorderItem(
+            item: item,
+            order: order,
+          ));
+        }
+      }
+    }
+    final displayItems = allItems.take(8).toList();
+
+    if (displayItems.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -594,11 +611,11 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Row(
             children: [
-              const Icon(Icons.replay_rounded,
-                  size: 20, color: Color(0xFFBB0018)),
+              const Icon(Icons.bolt_rounded,
+                  size: 20, color: Color(0xFFF9A825)),
               const SizedBox(width: 8),
               const Text(
-                'Order Again',
+                'Quick Reorder',
                 style: TextStyle(
                   color: Color(0xFF262626),
                   fontSize: 18,
@@ -607,7 +624,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
               ),
               const Spacer(),
               Text(
-                'From your recent restaurants',
+                'Tap to add',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF8E8E93),
@@ -617,131 +634,118 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
           ),
         ),
         SizedBox(
-          height: 210,
+          height: 130,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: restaurants.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => _buildOrderAgainCard(
-              context,
-              restaurantData: restaurants[index],
-            ),
+            itemCount: displayItems.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final quickItem = displayItems[index];
+              return _buildQuickReorderCard(
+                context,
+                item: quickItem.item,
+                order: quickItem.order,
+                cart: cart,
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  Widget _buildOrderAgainCard(
+  Widget _buildQuickReorderCard(
     BuildContext context, {
-    required Map<String, dynamic> restaurantData,
+    required OrderItem item,
+    required Order order,
+    required CartProvider cart,
   }) {
-    final name = restaurantData['name'] as String? ?? 'Restaurant';
-    final bannerUrl = restaurantData['banner_url'] as String? ?? '';
-    final rating = (restaurantData['rating'] as num?)?.toDouble() ?? 0;
-    final deliveryTime = (restaurantData['delivery_time_minutes'] as num?)?.toInt() ?? 30;
-
-    Restaurant? restaurant;
-    try {
-      restaurant = Restaurant.fromJson(restaurantData);
-    } catch (_) {}
-
     return GestureDetector(
       onTap: () {
-        if (restaurant != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RestaurantMenuScreen(restaurant: restaurant!),
+        final cartItem = CartItem(
+          id: '${item.foodId}_${item.specialInstructions ?? ''}_q',
+          foodId: item.foodId,
+          name: item.name,
+          price: item.price,
+          restaurantId: order.restaurantId,
+          restaurantName: '',
+          imageUrl: item.imageUrl,
+          specialInstructions: item.specialInstructions ?? '',
+          quantity: 1,
+        );
+        cart.addItem(cartItem);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Added ${item.name} to cart!'),
+              backgroundColor: const Color(0xFF1E8E3E),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
       },
       child: Container(
-        width: 180,
+        width: 120,
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFF0F0F0)),
           boxShadow: [BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8, offset: const Offset(0, 3),
+            blurRadius: 6, offset: const Offset(0, 2),
           )],
         ),
-        clipBehavior: Clip.antiAlias,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Banner image with "Reorder" badge
-            Stack(
-              children: [
-                Image.network(
-                  bannerUrl,
-                  height: 100,
-                  width: 180,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    height: 100,
-                    width: 180,
-                    color: const Color(0xFFF0F0F0),
-                    child: const Icon(Icons.restaurant,
-                        size: 32, color: Color(0xFFBFBFBF)),
-                  ),
-                ),
-                Positioned(
-                  left: 8,
-                  bottom: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFBB0018),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.replay_rounded, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('Reorder',
-                            style: TextStyle(
-                                fontSize: 10, fontWeight: FontWeight.w700,
-                                color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            // Item image
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        item.imageUrl!,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const Icon(
+                            Icons.restaurant,
+                            size: 24, color: Color(0xFFF9A825)),
+                      ),
+                    )
+                  : const Icon(Icons.restaurant,
+                      size: 24, color: Color(0xFFF9A825)),
             ),
-            // Info
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1C1C)),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFFC107)),
-                      const SizedBox(width: 2),
-                      Text('$rating',
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1C1C))),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.access_time, size: 12, color: Color(0xFF8E8E93)),
-                      const SizedBox(width: 2),
-                      Text('$deliveryTime min',
-                          style: const TextStyle(
-                              fontSize: 11, color: Color(0xFF8E8E93))),
-                    ],
-                  ),
-                ],
+            const SizedBox(height: 8),
+            // Item name
+            Text(
+              item.name,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1C1C),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 2),
+            // Price
+            Text(
+              'Rs. ${item.price.toStringAsFixed(0)}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFBB0018),
               ),
             ),
           ],
@@ -762,25 +766,18 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Row(
             children: [
-              const Icon(Icons.favorite_rounded,
-                  size: 20, color: Color(0xFFBB0018)),
+              const Icon(Icons.trending_up_rounded,
+                  size: 20, color: Color(0xFFF9A825)),
               const SizedBox(width: 8),
               const Text(
-                'Your Favourites',
+                'Most Ordered',
                 style: TextStyle(
                   color: Color(0xFF262626),
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
-              Text(
-                'Most ordered',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF8E8E93),
-                ),
-              ),
+
             ],
           ),
         ),
@@ -808,6 +805,7 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
     final name = restaurantData['name'] as String? ?? 'Restaurant';
     final bannerUrl = restaurantData['banner_url'] as String? ?? '';
     final rating = (restaurantData['rating'] as num?)?.toDouble() ?? 0;
+    final deliveryTime = (restaurantData['delivery_time_minutes'] as num?)?.toInt() ?? 30;
     final orderCount = (restaurantData['user_order_count'] as num?)?.toInt() ?? 0;
     final cuisineType = restaurantData['cuisine_type'] as String? ?? '';
 
@@ -874,19 +872,28 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                               color: Color(0xFFBB0018))),
                     ),
                   ),
-                // Heart icon
+                // Order count badge (replaces heart icon)
                 Positioned(
                   right: 6,
                   top: 6,
                   child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(Icons.favorite,
-                        size: 14, color: Color(0xFFBB0018)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.replay_rounded,
+                            size: 10, color: Color(0xFFF9A825)),
+                        const SizedBox(width: 2),
+                        Text('$orderCount',
+                            style: const TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w700,
+                                color: Color(0xFF795548))),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -912,9 +919,9 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                               fontSize: 12, fontWeight: FontWeight.w600,
                               color: Color(0xFF1A1C1C))),
                       const SizedBox(width: 8),
-                      const Icon(Icons.replay_rounded, size: 12, color: Color(0xFF8E8E93)),
+                      const Icon(Icons.access_time, size: 12, color: Color(0xFF8E8E93)),
                       const SizedBox(width: 2),
-                      Text('$orderCount order${orderCount != 1 ? 's' : ''}',
+                      Text('$deliveryTime min',
                           style: const TextStyle(
                               fontSize: 11, color: Color(0xFF8E8E93))),
                     ],
@@ -1226,24 +1233,28 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: Consumer(
-                        builder: (context, ref, _) {
-                          final isFav = ref.watch(favoritesProvider)
-                              .isRestaurantFavorite(restaurant.id);
-                          return GestureDetector(
+                      builder: (context, ref, _) {
+                        final isFav = ref.watch(favoritesProvider)
+                            .isRestaurantFavorite(restaurant.id);                          return GestureDetector(
                             onTap: () {
+                              final wasAdded = !ref.read(favoritesProvider)
+                                  .isRestaurantFavorite(restaurant.id);
                               ref.read(favoritesProvider.notifier)
                                   .toggleRestaurant(restaurant.id);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                _favoriteSnackbar(context, wasAdded: wasAdded),
+                              );
                             },
-                            child: Icon(
-                              isFav ? Icons.favorite : Icons.favorite_border,
-                              size: 16,
-                              color: isFav
-                                  ? const Color(0xFFF5222D)
-                                  : const Color(0xFF595959),
-                            ),
-                          );
-                        },
-                      ),
+                          child: Icon(
+                            isFav ? Icons.favorite : Icons.favorite_border,
+                            size: 16,
+                            color: isFav
+                                ? const Color(0xFFF5222D)
+                                : const Color(0xFF595959),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
@@ -1324,6 +1335,50 @@ class _UserHomeScreenState extends ConsumerState<UserHomeScreen> {
       ),
     );
   }
+
+  // ──────────────────────────────────────────────
+  // Favorite Snackbar
+  // ──────────────────────────────────────────────
+
+  SnackBar _favoriteSnackbar(BuildContext context, {required bool wasAdded}) {
+    return SnackBar(
+      content: Row(
+        children: [
+          Icon(
+            wasAdded ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(wasAdded ? 'Added to favorites' : 'Removed from favorites'),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E8E3E),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      action: wasAdded
+          ? SnackBarAction(
+              label: 'View all',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FavoritesScreen(),
+                  ),
+                );
+              },
+            )
+          : null,
+    );
+  }
+}
+
+/// Helper data class for the Quick Reorder section.
+class _QuickReorderItem {
+  final OrderItem item;
+  final Order order;
+  const _QuickReorderItem({required this.item, required this.order});
 }
 
 /// Delegate for the sticky location header that stays pinned at the top

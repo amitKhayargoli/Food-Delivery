@@ -123,7 +123,7 @@ class _ReportProblemScreenState extends State<ReportProblemScreen> {
                       const Text('Order',
                           style: TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
                       const Text('Order',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700,
                               color: Color(0xFF1A1C1C))),
                     ],

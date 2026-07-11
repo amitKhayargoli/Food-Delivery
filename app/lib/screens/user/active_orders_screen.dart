@@ -332,7 +332,7 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen> {
                     const SizedBox(width: 8),
                     const Text(
                       'Order',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1A1C1C),

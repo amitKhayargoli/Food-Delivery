@@ -428,18 +428,22 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
             ),
             const Spacer(),
             if (widget.etaText != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F0FE),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  widget.etaText!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1967D2),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    widget.etaText!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1967D2),
+                    ),
                   ),
                 ),
               ),
@@ -639,7 +643,10 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
                     if (widget.etaText != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        'Rider is ${widget.etaText!.toLowerCase()}',
+                        widget.etaText!.toLowerCase().startsWith('rider is')
+                            ? widget.etaText!
+                            : 'Rider is ${widget.etaText!.toLowerCase()}',
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 13,
                           color: Color(0xFF5C5C5C),

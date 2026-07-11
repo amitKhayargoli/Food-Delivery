@@ -145,6 +145,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
             builder: (_) => SupportChatScreen(
               conversationId: convId,
               subject: result,
+              restaurantName: conv['restaurant_name'] as String?,
             ),
           ),
         );
@@ -301,16 +302,16 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
     final convId = conv['id'] as String? ?? '';
 
     final card = GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => SupportChatScreen(
-              conversationId: convId,
-              subject: subject,
+      onTap: () {          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SupportChatScreen(
+                conversationId: convId,
+                subject: subject,
+                restaurantName: conv['restaurant_name'] as String?,
+              ),
             ),
-          ),
-        ).then((_) => _fetchConversations());
+          ).then((_) => _fetchConversations());
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),

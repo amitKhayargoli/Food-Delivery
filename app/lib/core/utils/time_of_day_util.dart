@@ -24,20 +24,22 @@ class TimeOfDayUtil {
     return night;
   }
 
-  /// Friendly greeting with emoji for the given [period].
+  /// Friendly greeting for the given [period].
   /// Defaults to the current period if none provided.
+  /// Note: emoji is shown separately via [mealEmoji] in the greeting badge,
+  /// so this method returns text-only to avoid duplicate emojis.
   static String greeting([String? period]) {
     switch (period ?? currentPeriod) {
       case morning:
-        return 'Good Morning ☀️';
+        return 'Good Morning';
       case afternoon:
-        return 'Good Afternoon 🌤️';
+        return 'Good Afternoon';
       case evening:
-        return 'Good Evening 🌅';
+        return 'Good Evening';
       case night:
-        return 'Good Night 🌙';
+        return 'Good Night';
       default:
-        return 'Hello! 👋';
+        return 'Hello';
     }
   }
 
@@ -95,11 +97,11 @@ class TimeOfDayUtil {
   static List<String> matchingCategoryKeywords([String? period]) {
     switch (period ?? currentPeriod) {
       case morning:
-        return ['Breakfast', 'Morning', 'Brunch'];
+        return ['Breakfast', 'Morning', 'Brunch', 'Paratha', 'Omelette', 'Pancake', 'Waffle', 'Cereal', 'Toast', 'Sandwich'];
       case afternoon:
-        return ['Lunch', 'Main Course', 'Rice', 'Noodles', 'Biriyani'];
+        return ['Lunch', 'Main Course', 'Rice', 'Noodles', 'Biriyani', 'Curry', 'Thali', 'Roll', 'Wrap', 'Kebab'];
       case evening:
-        return ['Dinner', 'Main Course', 'Rice', 'Noodles', 'Pizza', 'Momo', 'Burger'];
+        return ['Dinner', 'Main Course', 'Rice', 'Noodles', 'Pizza', 'Momo', 'Burger', 'Pasta', 'Steak', 'Grill', 'Roast', 'Curry', 'Kebab', 'Tandoori'];
       case night:
         return []; // empty = show all
       default:
@@ -113,6 +115,33 @@ class TimeOfDayUtil {
     final keywords = matchingCategoryKeywords(period);
     if (keywords.isEmpty) return true; // night = show all
     final lower = category.toLowerCase();
+    return keywords.any((k) => lower.contains(k.toLowerCase()));
+  }
+
+  /// Cuisine types that are suitable for the given time period.
+  /// Used as a second-pass filter when food-item category matching
+  /// doesn't return enough results.
+  static List<String> matchingCuisineKeywords([String? period]) {
+    switch (period ?? currentPeriod) {
+      case morning:
+        return ['Breakfast', 'Brunch', 'Cafe', 'Bakery', 'Coffee', 'Morning'];
+      case afternoon:
+        return ['Lunch', 'Biriyani', 'Rice', 'Noodles', 'Chinese', 'Thai', 'Indian', 'Asian'];
+      case evening:
+        return ['Dinner', 'Pizza', 'Burger', 'Momo', 'Italian', 'Mexican', 'Fast Food', 'Indian', 'Chinese', 'Continental'];
+      case night:
+        return []; // empty = show all
+      default:
+        return [];
+    }
+  }
+
+  /// True if the restaurant's cuisine type is suitable for the given
+  /// or specified time period.
+  static bool cuisineMatches(String cuisineType, [String? period]) {
+    final keywords = matchingCuisineKeywords(period);
+    if (keywords.isEmpty) return true; // night = show all
+    final lower = cuisineType.toLowerCase();
     return keywords.any((k) => lower.contains(k.toLowerCase()));
   }
 

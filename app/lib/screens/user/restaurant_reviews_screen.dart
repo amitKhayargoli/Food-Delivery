@@ -386,7 +386,7 @@ class _RestaurantReviewsScreenState extends State<RestaurantReviewsScreen> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   return ClipRRect(
                     borderRadius: BorderRadius.circular(8),

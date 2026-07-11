@@ -1530,7 +1530,7 @@ class _RestaurantOwnerProfileState extends State<_RestaurantOwnerProfile> {
                     if (cuisine != null || (openTime != null && closeTime != null))
                       Text(
                         [
-                          if (cuisine != null) cuisine,
+                          ?cuisine,
                           if (openTime != null && closeTime != null)
                             '${_formatTime(openTime)} - ${_formatTime(closeTime)}',
                         ].join('  🕐  '),

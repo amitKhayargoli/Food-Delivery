@@ -37,7 +37,7 @@ class ApiService {
       final response = await _dio.post('/auth/verify-otp', data: {
         'phone': phone,
         'otp': otp,
-        if (username != null) 'username': username,
+        'username': ?username,
       });
 
       final data = response.data as Map<String, dynamic>;
@@ -62,9 +62,9 @@ class ApiService {
   }) async {
     try {
       final response = await _dio.post('/auth/check-availability', data: {
-        if (username != null) 'username': username,
-        if (phone != null) 'phone': phone,
-        if (email != null) 'email': email,
+        'username': ?username,
+        'phone': ?phone,
+        'email': ?email,
       });
 
       final data = response.data as Map<String, dynamic>;
@@ -117,12 +117,12 @@ class ApiService {
           'address': address,
           'pan_number': panNumber,
           'pan_certificate_url': panCertificateUrl,
-          if (description != null) 'description': description,
-          if (logoUrl != null) 'logo_url': logoUrl,
-          if (coverImageUrl != null) 'cover_image_url': coverImageUrl,
-          if (openTime != null) 'open_time': openTime,
-          if (closeTime != null) 'close_time': closeTime,
-          if (cuisineType != null) 'cuisine_type': cuisineType,
+          'description': ?description,
+          'logo_url': ?logoUrl,
+          'cover_image_url': ?coverImageUrl,
+          'open_time': ?openTime,
+          'close_time': ?closeTime,
+          'cuisine_type': ?cuisineType,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -243,7 +243,7 @@ class ApiService {
       final response = await _dio.patch(
         '/orders/$orderId/accept',
         data: {
-          if (estimatedPrepTime != null) 'estimated_prep_time': estimatedPrepTime,
+          'estimated_prep_time': ?estimatedPrepTime,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -265,7 +265,7 @@ class ApiService {
       final response = await _dio.patch(
         '/orders/$orderId/reject',
         data: {
-          if (reason != null) 'reason': reason,
+          'reason': ?reason,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -501,8 +501,8 @@ class ApiService {
           'subtotal': subtotal,
           'delivery_fee': deliveryFee,
           'total': total,
-          if (deliveryAddress != null) 'delivery_address': deliveryAddress,
-          if (deliveryNotes != null) 'delivery_notes': deliveryNotes,
+          'delivery_address': ?deliveryAddress,
+          'delivery_notes': ?deliveryNotes,
           'payment_method': paymentMethod,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
@@ -698,9 +698,9 @@ class ApiService {
       final response = await _dio.patch(
         '/orders/$orderId/deliver',
         data: {
-          if (deliveryPhotoUrl != null) 'delivery_photo_url': deliveryPhotoUrl,
-          if (deliveryLat != null) 'delivery_lat': deliveryLat,
-          if (deliveryLng != null) 'delivery_lng': deliveryLng,
+          'delivery_photo_url': ?deliveryPhotoUrl,
+          'delivery_lat': ?deliveryLat,
+          'delivery_lng': ?deliveryLng,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -856,9 +856,9 @@ class ApiService {
         data: {
           'latitude': latitude,
           'longitude': longitude,
-          if (heading != null) 'heading': heading,
-          if (speed != null) 'speed': speed,
-          if (accuracy != null) 'accuracy': accuracy,
+          'heading': ?heading,
+          'speed': ?speed,
+          'accuracy': ?accuracy,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -946,7 +946,7 @@ class ApiService {
           'order_id': orderId,
           'rider_id': riderId,
           'rating': rating,
-          if (comment != null) 'comment': comment,
+          'comment': ?comment,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1021,7 +1021,7 @@ class ApiService {
         '/dispatch/admin/riders',
         data: {
           'username': username,
-          if (email != null) 'email': email,
+          'email': ?email,
           'phone': phone,
           'password': password,
         },
@@ -1087,7 +1087,7 @@ class ApiService {
         data: {
           'code': code,
           'order_total': orderTotal,
-          if (restaurantId != null) 'restaurant_id': restaurantId,
+          'restaurant_id': ?restaurantId,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1137,11 +1137,11 @@ class ApiService {
           'code': code,
           'discount_type': discountType,
           'discount_value': discountValue,
-          if (minOrderAmount != null) 'min_order_amount': minOrderAmount,
-          if (maxDiscountCap != null) 'max_discount_cap': maxDiscountCap,
-          if (usageLimit != null) 'usage_limit': usageLimit,
-          if (expiresAt != null) 'expires_at': expiresAt,
-          if (description != null) 'description': description,
+          'min_order_amount': ?minOrderAmount,
+          'max_discount_cap': ?maxDiscountCap,
+          'usage_limit': ?usageLimit,
+          'expires_at': ?expiresAt,
+          'description': ?description,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1254,7 +1254,7 @@ class ApiService {
         data: {
           'order_id': orderId,
           'issue_type': issueType,
-          if (description != null) 'description': description,
+          'description': ?description,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1329,8 +1329,8 @@ class ApiService {
         '/problems/$problemId/status',
         data: {
           'status': status,
-          if (adminNote != null) 'admin_note': adminNote,
-          if (refundAmount != null) 'refund_amount': refundAmount,
+          'admin_note': ?adminNote,
+          'refund_amount': ?refundAmount,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1415,7 +1415,7 @@ class ApiService {
         '/support/conversations',
         data: {
           'subject': subject,
-          if (orderId != null) 'order_id': orderId,
+          'order_id': ?orderId,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1542,7 +1542,7 @@ class ApiService {
           'limit': limit,
           'offset': offset,
           if (unreadOnly) 'unread': 'true',
-          if (role != null) 'role': role,
+          'role': ?role,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1600,7 +1600,7 @@ class ApiService {
         data: {
           'restaurant_id': restaurantId,
           'rating': rating,
-          if (comment != null) 'comment': comment,
+          'comment': ?comment,
           if (images != null && images.isNotEmpty) 'images': images,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
@@ -1670,9 +1670,9 @@ class ApiService {
       final response = await _dio.put(
         '/reviews/$reviewId',
         data: {
-          if (rating != null) 'rating': rating,
-          if (comment != null) 'comment': comment,
-          if (images != null) 'images': images,
+          'rating': ?rating,
+          'comment': ?comment,
+          'images': ?images,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -1725,7 +1725,7 @@ class ApiService {
           'vehicle_type': vehicleType,
           'vehicle_number': vehicleNumber,
           'license_url': licenseUrl,
-          if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
+          'profile_image_url': ?profileImageUrl,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );

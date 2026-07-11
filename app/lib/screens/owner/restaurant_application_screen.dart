@@ -395,7 +395,7 @@ class _RestaurantApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Header row: back button + logo
         Row(
           children: [
@@ -460,7 +460,7 @@ class _RestaurantApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Progress indicator
         const StepProgressIndicator(
           currentStep: 0,
@@ -470,7 +470,7 @@ class _RestaurantApplicationScreenState
             StepInfo(number: '3', label: 'Menu'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Form card
         Container(
           width: double.infinity,
@@ -497,7 +497,7 @@ class _RestaurantApplicationScreenState
                   }
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Business Email Address
               _stepTextField(
                 label: 'Business Email Address',
@@ -511,7 +511,7 @@ class _RestaurantApplicationScreenState
                   }
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Mobile Number (with country code prefix)
               const SizedBox(
                 width: double.infinity,
@@ -609,7 +609,7 @@ class _RestaurantApplicationScreenState
           ),
         ),
         // Extra space so the bottom bar doesn't overlap
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -622,7 +622,7 @@ class _RestaurantApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Header row: back button + logo
         Row(
           children: [
@@ -686,7 +686,7 @@ class _RestaurantApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Progress indicator
         const StepProgressIndicator(
           currentStep: 1,
@@ -696,7 +696,7 @@ class _RestaurantApplicationScreenState
             StepInfo(number: '3', label: 'Menu'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Form card
         Container(
           width: double.infinity,
@@ -773,13 +773,13 @@ class _RestaurantApplicationScreenState
                 ),
               ),
                 ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Action buttons
               _buildBusinessActionButtons(),
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1179,7 +1179,7 @@ class _RestaurantApplicationScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Header row: back button + logo
         Row(
           children: [
@@ -1241,7 +1241,7 @@ class _RestaurantApplicationScreenState
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Progress indicator
         const StepProgressIndicator(
           currentStep: 2,
@@ -1251,7 +1251,7 @@ class _RestaurantApplicationScreenState
             StepInfo(number: '3', label: 'Menu'),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Form card
         Container(
           width: double.infinity,
@@ -1292,7 +1292,7 @@ class _RestaurantApplicationScreenState
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         // Submit button + terms
         _buildStep3SubmitSection(),
         // Error
@@ -1326,7 +1326,7 @@ class _RestaurantApplicationScreenState
               ),
             ),
           ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1919,7 +1919,7 @@ class _RestaurantApplicationScreenState
           children: [
             const SizedBox(height: 48),
             const Icon(Icons.check_circle, size: 80, color: Color(0xFF4CAF50)),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             const Text(
               'Application Submitted!',
               textAlign: TextAlign.center,

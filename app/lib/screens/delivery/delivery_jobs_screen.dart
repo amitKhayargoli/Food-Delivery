@@ -160,7 +160,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('You are now online — sharing location'),
-            backgroundColor: Color(0xFF1E8E3E),
+            backgroundColor: Color(0xFF52C41A),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -238,7 +238,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       if (!mounted) return;
 
       // Dispose old rider note controllers since order list may have changed
-      for (final ctrl in _riderNoteCtrls.values) ctrl.dispose();
+      for (final ctrl in _riderNoteCtrls.values) {
+        ctrl.dispose();
+      }
       _riderNoteCtrls.clear();
 
       setState(() {
@@ -331,7 +333,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Job accepted! Order picked up.'),
-            backgroundColor: Color(0xFF1E8E3E),
+            backgroundColor: Color(0xFF52C41A),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -365,7 +367,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.camera_alt_rounded, color: Color(0xFFBB0018), size: 24),
+            Icon(Icons.camera_alt_rounded, color: Color(0xFFF5222D), size: 24),
             SizedBox(width: 10),
             Expanded(
               child: Text('Delivery Photo',
@@ -376,7 +378,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         content: const Text(
           'Take a photo of the delivered order as proof of delivery.\n\n'
           'This helps resolve disputes and provides a complete delivery record.',
-          style: TextStyle(fontSize: 14, color: Color(0xFF5C5C5C), height: 1.5),
+          style: TextStyle(fontSize: 14, color: Color(0xFF595959), height: 1.5),
         ),
         actions: [
           TextButton(
@@ -389,7 +391,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
             icon: const Icon(Icons.camera_alt, size: 18),
             label: const Text('Take Photo'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFBB0018),
+              backgroundColor: const Color(0xFFF5222D),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
@@ -473,18 +475,18 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE6F4EA),
+                  color: const Color(0xFFF6FFED),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_circle, size: 16, color: Color(0xFF1E8E3E)),
+                    Icon(Icons.check_circle, size: 16, color: Color(0xFF52C41A)),
                     SizedBox(width: 6),
                     Text('Photo attached',
                         style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E8E3E))),
+                            color: Color(0xFF52C41A))),
                   ],
                 ),
               ),
@@ -498,7 +500,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFF1E8E3E)),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF52C41A)),
             child: const Text('Delivered'),
           ),
         ],
@@ -541,7 +543,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Order delivered successfully!'),
-            backgroundColor: Color(0xFF1E8E3E),
+            backgroundColor: Color(0xFF52C41A),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -568,7 +570,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('📍 Marked as arrived — customer notified'),
-        backgroundColor: Color(0xFF1967D2),
+        backgroundColor: Color(0xFFFF5745),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -592,7 +594,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFD93025)),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFF5222D)),
             child: const Text('Decline'),
           ),
         ],
@@ -612,7 +614,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Order declined. Owner has been notified.'),
-            backgroundColor: Color(0xFFD93025),
+            backgroundColor: Color(0xFFF5222D),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -712,7 +714,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAF9F9),
+      backgroundColor: const Color(0xFFFFFFFF),
       appBar: AppBar(
         title: const Text(
           'Delivery',
@@ -720,12 +722,12 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1A1C1C),
+        foregroundColor: const Color(0xFF1A1A1A),
         elevation: 0.5,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: const Color(0xFFBB0018),
-          labelColor: const Color(0xFFBB0018),
+          indicatorColor: const Color(0xFFF5222D),
+          labelColor: const Color(0xFFF5222D),
           unselectedLabelColor: const Color(0xFF8E8E93),
           labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           tabs: [
@@ -786,13 +788,13 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _isOnline
-                      ? const Color(0xFFE6F4EA)
+                      ? const Color(0xFFF6FFED)
                       : const Color(0xFFFFF1F0),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: _isOnline
-                        ? const Color(0xFF1E8E3E)
-                        : const Color(0xFFD93025),
+                        ? const Color(0xFF52C41A)
+                        : const Color(0xFFF5222D),
                     width: 0.5,
                   ),
                 ),
@@ -803,8 +805,8 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                       width: 7, height: 7,
                       decoration: BoxDecoration(
                         color: _isOnline
-                            ? const Color(0xFF1E8E3E)
-                            : const Color(0xFFD93025),
+                            ? const Color(0xFF52C41A)
+                            : const Color(0xFFF5222D),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -815,8 +817,8 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: _isOnline
-                            ? const Color(0xFF1E8E3E)
-                            : const Color(0xFFD93025),
+                            ? const Color(0xFF52C41A)
+                            : const Color(0xFFF5222D),
                       ),
                     ),
                   ],
@@ -844,7 +846,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            CircularProgressIndicator(color: Color(0xFFF5222D)),
             SizedBox(height: 16),
             Text('Loading jobs...',
                 style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
@@ -870,7 +872,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFBB0018),
+                  backgroundColor: const Color(0xFFF5222D),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -884,7 +886,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
     if (_jobs.isEmpty) {
       return RefreshIndicator(
         onRefresh: _fetchJobs,
-        color: const Color(0xFFBB0018),
+        color: const Color(0xFFF5222D),
         child: ListView(
           children: [
             SizedBox(
@@ -893,7 +895,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.moped_rounded, size: 56, color: Color(0xFFD9D9D9)),
+                    Icon(Icons.moped_rounded, size: 56, color: Color(0xFFBFBFBF)),
                     SizedBox(height: 12),
                     Text('No jobs assigned',
                         style: TextStyle(
@@ -914,7 +916,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
 
     return RefreshIndicator(
       onRefresh: _fetchJobs,
-      color: const Color(0xFFBB0018),
+      color: const Color(0xFFF5222D),
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         itemCount: _jobs.length,
@@ -932,9 +934,11 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         order.status == OrderStatus.outForDelivery;
     final isMapExpanded = _expandedOrderId == order.id;
 
+    final bannerUrl = order.items.firstOrNull?.imageUrl;
+    final hasBannerImage = bannerUrl != null && bannerUrl.isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -946,108 +950,132 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.receipt_long_rounded,
-                      size: 18, color: Color(0xFFBB0018)),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Delivery',
-                    style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
+          // ── Full-width banner image (first item's image) ──
+          if (hasBannerImage)
+            SizedBox(
+              width: double.infinity,
+              height: 150,
+              child: Image.network(
+                bannerUrl,
+                width: double.infinity,
+                height: 150,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+
+          // ── Content section ──
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.receipt_long_rounded,
+                            size: 18, color: Color(0xFFF5222D)),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Delivery',
+                          style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  _buildStatusBadge(order.status),
-                  const SizedBox(width: 8),
-                  Text(_timeAgo(order.createdAt),
-                      style: const TextStyle(
-                          color: Color(0xFF5C5C5C), fontSize: 12)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _buildStatusBadge(order.status),
+                        const SizedBox(width: 8),
+                        Text(_timeAgo(order.createdAt),
+                            style: const TextStyle(
+                                color: Color(0xFF595959), fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
 
-          // ── Restaurant name ──
-          if (order.restaurantName.isNotEmpty) ...[
-            Row(
-              children: [
-                const Icon(Icons.store, color: Color(0xFF8E8E93), size: 18),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    order.restaurantName,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1C1C)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                // ── Restaurant name ──
+                if (order.restaurantName.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.store, color: Color(0xFF8E8E93), size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          order.restaurantName,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Items ──
+                ...order.items.take(2).map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('${item.quantity}x ${item.name}',
+                          style: const TextStyle(
+                              fontSize: 14, color: Color(0xFF595959))),
+                    )),
+                if (order.items.length > 2)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('+${order.items.length - 2} more items',
+                        style: const TextStyle(
+                            color: Color(0xFFBFBFBF), fontSize: 12)),
+                  ),
+
+                const SizedBox(height: 12),
+
+                // ── Dropoff address ──
+                if (dropoff?.fullAddress != null) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, color: Color(0xFFF5222D), size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          dropoff!.fullAddress!,
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFF595959)),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Total ──
+                Row(
+                  children: [
+                    const Icon(Icons.receipt_outlined, color: Color(0xFF8E8E93), size: 18),
+                    const SizedBox(width: 6),
+                    Text('Total: ${_formatCurrency(order.total)}',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A))),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-          ],
-
-          // ── Items ──
-          ...order.items.take(2).map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('${item.quantity}x ${item.name}',
-                    style: const TextStyle(
-                        fontSize: 14, color: Color(0xFF5C5C5C))),
-              )),
-          if (order.items.length > 2)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text('+${order.items.length - 2} more items',
-                  style: const TextStyle(
-                      color: Color(0xFFBFBFBF), fontSize: 12)),
-            ),
-
-          const SizedBox(height: 12),
-
-          // ── Dropoff address ──
-          if (dropoff?.fullAddress != null) ...[
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Color(0xFFBB0018), size: 18),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    dropoff!.fullAddress!,
-                    style: const TextStyle(
-                        fontSize: 13, color: Color(0xFF5C5C5C)),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // ── Total ──
-          Row(
-            children: [
-              const Icon(Icons.receipt_outlined, color: Color(0xFF8E8E93), size: 18),
-              const SizedBox(width: 6),
-              Text('Total: ${_formatCurrency(order.total)}',
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1C1C))),
-            ],
           ),
 
           const SizedBox(height: 12),
@@ -1070,7 +1098,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                 ),
                 label: Text(isMapExpanded ? 'Hide Map' : 'Show Map'),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF1967D2),
+                  foregroundColor: const Color(0xFFFF5745),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1103,7 +1131,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                         MaterialPageRoute(
                           builder: (_) => FullScreenMapScreen(
                             riderLocation: RiderMapPoint(
-                              latitude: dropoff!.latitude!,
+                              latitude: dropoff.latitude!,
                               longitude: dropoff.longitude!,
                               label: 'You',
                               type: RiderMapPointType.rider,
@@ -1177,7 +1205,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                     child: _buildActionButton(
                       label: 'Navigate',
                       icon: Icons.navigation,
-                      color: const Color(0xFF1967D2),
+                      color: const Color(0xFFFF5745),
                       onPressed: () => _navigateToDropoff(order),
                     ),
                   ),
@@ -1187,7 +1215,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   child: _buildActionButton(
                     label: 'Accept (Pick Up)',
                     icon: Icons.assignment_turned_in,
-                    color: const Color(0xFFBB0018),
+                    color: const Color(0xFFF5222D),
                     isLoading: _isAccepting,
                     onPressed: () => _acceptJob(order),
                   ),
@@ -1206,7 +1234,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                     ? const SizedBox(
                         width: 16, height: 16,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Color(0xFFD93025)))
+                            strokeWidth: 2, color: Color(0xFFF5222D)))
                     : const Icon(Icons.close_rounded, size: 18),
                 label: Text(
                   _isDecliningOrderId == order.id
@@ -1215,8 +1243,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   style: const TextStyle(fontSize: 13),
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFD93025),
-                  side: const BorderSide(color: Color(0xFFD93025)),
+                  foregroundColor: const Color(0xFFF5222D),
+                  side: const BorderSide(color: Color(0xFFF5222D)),
+                  backgroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1236,7 +1265,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                         child: _buildActionButton(
                           label: 'Navigate',
                           icon: Icons.navigation,
-                          color: const Color(0xFF1967D2),
+                          color: const Color(0xFFFF5745),
                           onPressed: () => _navigateToDropoff(order),
                         ),
                       ),
@@ -1273,9 +1302,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                           fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E8E3E),
+                      backgroundColor: const Color(0xFF52C41A),
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFEFEDED),
+                      disabledBackgroundColor: const Color(0xFFE0E0E0),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -1299,8 +1328,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                 label: const Text('Call Customer',
                     style: TextStyle(fontSize: 13)),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF34C759),
-                  side: const BorderSide(color: Color(0xFF34C759)),
+                  foregroundColor: const Color(0xFFFF5745),
+                  side: const BorderSide(color: Color(0xFFFF5745)),
+                  backgroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1336,7 +1366,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFFEFEDED),
+          disabledBackgroundColor: const Color(0xFFE0E0E0),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
@@ -1363,12 +1393,12 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.chat_outlined, size: 16, color: Color(0xFF1967D2)),
+            const Icon(Icons.chat_outlined, size: 16, color: Color(0xFFFF5745)),
             const SizedBox(width: 6),
             const Text('Quick Note to Customer',
                 style: TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600,
-                    color: Color(0xFF1967D2))),
+                    color: Color(0xFFFF5745))),
           ],
         ),
         const SizedBox(height: 8),
@@ -1378,20 +1408,20 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
             padding: const EdgeInsets.all(10),
             margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F0FE),
+              color: const Color(0xFFFFF1F0),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                  color: const Color(0xFF1967D2).withValues(alpha: 0.2)),
+                  color: const Color(0xFFFF5745).withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
                 const Icon(Icons.check_circle,
-                    size: 14, color: Color(0xFF1967D2)),
+                    size: 14, color: Color(0xFFFF5745)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text('Sent: "${order.riderNote!}"',
                       style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF1967D2),
+                          fontSize: 12, color: Color(0xFFFF5745),
                           fontWeight: FontWeight.w500)),
                 ),
               ],
@@ -1415,15 +1445,15 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                         horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF1967D2)),
+                      borderSide: const BorderSide(color: Color(0xFFFF5745)),
                     ),
                     filled: true,
                     fillColor: Colors.white,
@@ -1452,7 +1482,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Note sent to customer!'),
-                              backgroundColor: Color(0xFF1967D2),
+                              backgroundColor: Color(0xFFFF5745),
                               behavior: SnackBarBehavior.floating,
                               duration: Duration(seconds: 2),
                             ),
@@ -1460,9 +1490,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1967D2),
+                  backgroundColor: const Color(0xFFFF5745),
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFEFEDED),
+                  disabledBackgroundColor: const Color(0xFFE0E0E0),
                   padding: EdgeInsets.zero,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1492,12 +1522,12 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
 
     switch (status) {
       case OrderStatus.outForDelivery:
-        bgColor = const Color(0xFFE6F4EA);
-        textColor = const Color(0xFF1E8E3E);
+        bgColor = const Color(0xFFF6FFED);
+        textColor = const Color(0xFF52C41A);
         label = 'Ready';
       case OrderStatus.pickedUp:
-        bgColor = const Color(0xFFE8F0FE);
-        textColor = const Color(0xFF1967D2);
+        bgColor = const Color(0xFFFFF1F0);
+        textColor = const Color(0xFFFF5745);
         label = 'Picked Up';
       default:
         bgColor = const Color(0xFFFFF8E1);
@@ -1530,7 +1560,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFFBB0018)),
+            CircularProgressIndicator(color: Color(0xFFF5222D)),
             SizedBox(height: 16),
             Text('Loading stats...',
                 style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14)),
@@ -1545,7 +1575,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
 
     return RefreshIndicator(
       onRefresh: _fetchRiderStats,
-      color: const Color(0xFFBB0018),
+      color: const Color(0xFFF5222D),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1553,7 +1583,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
           const Text("Today's Summary",
               style: TextStyle(
                   fontSize: 22, fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1C1C))),
+                  color: Color(0xFF1A1A1A))),
           const SizedBox(height: 4),
           const Text('Your delivery performance today',
               style: TextStyle(fontSize: 14, color: Color(0xFF8E8E93))),
@@ -1567,7 +1597,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   icon: Icons.check_circle,
                   label: 'Deliveries',
                   value: '$deliveries',
-                  color: const Color(0xFF1E8E3E),
+                  color: const Color(0xFF52C41A),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1576,7 +1606,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   icon: Icons.route,
                   label: 'Distance',
                   value: '${distance.toStringAsFixed(1)} km',
-                  color: const Color(0xFF1967D2),
+                  color: const Color(0xFFFF5745),
                 ),
               ),
             ],
@@ -1586,7 +1616,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
             icon: Icons.account_balance_wallet,
             label: 'Estimated Earnings',
             value: _formatCurrency(earnings),
-            color: const Color(0xFFBB0018),
+            color: const Color(0xFFF5222D),
             large: true,
           ),
           const SizedBox(height: 24),
@@ -1625,7 +1655,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
             const Text('Active Jobs',
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w700,
-                    color: Color(0xFF1A1C1C))),
+                    color: Color(0xFF1A1A1A))),
             const SizedBox(height: 8),
             ..._jobs.map((order) => Container(
                   padding: const EdgeInsets.all(12),
@@ -1633,7 +1663,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: const Color(0xFFE8E8E8)),
                   ),
                   child: Row(
                     children: [
@@ -1648,9 +1678,9 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
                       const SizedBox(width: 10),
                       Expanded(
                         child:                      Text(
-                          '${_formatCurrency(order.total)}',
+                          _formatCurrency(order.total),
                           style: const TextStyle(
-                              fontSize: 13, color: Color(0xFF1A1C1C)),
+                              fontSize: 13, color: Color(0xFF1A1A1A)),
                         ),
                       ),
                       _buildStatusBadge(order.status),
@@ -1676,7 +1706,7 @@ class _DeliveryJobsScreenState extends State<DeliveryJobsScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFE8E8E8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

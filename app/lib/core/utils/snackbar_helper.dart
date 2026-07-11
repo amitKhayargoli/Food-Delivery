@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../core/utils/snackbar_helper.dart';
 
 /// Provides standardized snackbar methods with a consistent color scheme
 /// across the entire app. Always use these helpers instead of inline SnackBar.

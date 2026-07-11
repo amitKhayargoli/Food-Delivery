@@ -19,7 +19,7 @@ class WriteReviewScreen extends StatefulWidget {
 class _WriteReviewScreenState extends State<WriteReviewScreen> {
   int _rating = 0;
   final TextEditingController _commentCtrl = TextEditingController();
-  List<String> _uploadedImageUrls = [];
+  final List<String> _uploadedImageUrls = [];
   bool _isUploading = false;
   bool _isSubmitting = false;
 
@@ -273,7 +273,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _uploadedImageUrls.length + 1,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   if (index == _uploadedImageUrls.length) {
                     // Add photo button

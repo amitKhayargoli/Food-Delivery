@@ -111,23 +111,9 @@ class _NotificationToastOverlayState extends State<_NotificationToastOverlay>
     super.dispose();
   }
 
+  /// Standard notification icon used for all notification types.
   IconData _iconForType(String? type) {
-    switch (type) {
-      case 'order_update':
-        return Icons.receipt_long_rounded;
-      case 'order_cancelled':
-        return Icons.cancel_outlined;
-      case 'promotion':
-        return Icons.local_offer_rounded;
-      case 'rider_declined':
-      case 'rider_timeout':
-      case 'reassignment_failed':
-        return Icons.moped_rounded;
-      case 'role_change':
-        return Icons.swap_horiz_rounded;
-      default:
-        return Icons.notifications_active_rounded;
-    }
+    return Icons.notifications_active_rounded;
   }
 
   @override

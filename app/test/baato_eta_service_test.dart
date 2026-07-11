@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baato_maps/baato_maps.dart';
 
-import '../lib/core/services/baato_eta_service.dart';
+import 'package:app/core/services/baato_eta_service.dart';
 
 /// Helper to build a valid mock [BaatoRouteResponse] from raw JSON.
 /// The response must contain exactly one route with the given distance
@@ -179,7 +179,7 @@ void main() {
         // Verify caching by counting fetcher calls — second identical call
         // should use cached result without calling the fetcher again.
         int fetchCount = 0;
-        final countingFetcher = ({
+        Future<BaatoRouteResponse> countingFetcher({
           required BaatoCoordinate startCoordinate,
           required BaatoCoordinate endCoordinate,
           required BaatoDirectionMode mode,
@@ -190,7 +190,7 @@ void main() {
         }) async {
           fetchCount++;
           return _makeRouteResponse(distanceMeters: 5000.0, timeMs: 600000);
-        };
+        }
 
         final service2 = BaatoEtaService(routeFetcher: countingFetcher);
         await service2.getEta(
@@ -211,7 +211,7 @@ void main() {
 
       test('different coordinates bypass cache', () async {
         int fetchCount = 0;
-        final countingFetcher = ({
+        Future<BaatoRouteResponse> countingFetcher({
           required BaatoCoordinate startCoordinate,
           required BaatoCoordinate endCoordinate,
           required BaatoDirectionMode mode,
@@ -222,7 +222,7 @@ void main() {
         }) async {
           fetchCount++;
           return _makeRouteResponse(distanceMeters: 5000.0, timeMs: 600000);
-        };
+        }
 
         final service2 = BaatoEtaService(routeFetcher: countingFetcher);
         await service2.getEta(
@@ -243,7 +243,7 @@ void main() {
 
       test('clearCache() empties the cache', () async {
         int fetchCount = 0;
-        final countingFetcher = ({
+        Future<BaatoRouteResponse> countingFetcher({
           required BaatoCoordinate startCoordinate,
           required BaatoCoordinate endCoordinate,
           required BaatoDirectionMode mode,
@@ -254,7 +254,7 @@ void main() {
         }) async {
           fetchCount++;
           return _makeRouteResponse(distanceMeters: 5000.0, timeMs: 600000);
-        };
+        }
 
         final service2 = BaatoEtaService(routeFetcher: countingFetcher);
         await service2.getEta(
