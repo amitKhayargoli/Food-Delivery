@@ -129,7 +129,7 @@ class BaatoEtaService {
           startCoordinate: start,
           endCoordinate: end,
           mode: BaatoDirectionMode.bike,
-          alternatives: true,  // Get multiple route options
+          alternatives: false,
           instructions: false,
           decodePolyline: false,
         );
@@ -138,7 +138,7 @@ class BaatoEtaService {
           startCoordinate: start,
           endCoordinate: end,
           mode: BaatoDirectionMode.bike,
-          alternatives: true,  // Get multiple route options
+          alternatives: false,
           instructions: false,
           decodePolyline: false,
         );
@@ -149,12 +149,6 @@ class BaatoEtaService {
         return const BaatoEtaResponse(error: 'No route found');
       }
 
-      // Pick the SHORTEST route by distance for the most accurate ETA
-      if (routes.length > 1) {
-        routes.sort((a, b) =>
-          (a.distanceInMeters ?? double.infinity)
-              .compareTo(b.distanceInMeters ?? double.infinity));
-      }
       final route = routes.first;
       final distanceM = route.distanceInMeters;
       final timeMs = route.timeInMs;

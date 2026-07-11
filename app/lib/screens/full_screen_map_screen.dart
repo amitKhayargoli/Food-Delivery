@@ -318,37 +318,17 @@ class _FullScreenMapScreenState extends State<FullScreenMapScreen> {
       }
 
       // Fetch route from Baato Directions API
-      final routeResult = await Baato.api.direction.getRoutes(
+      final route = await Baato.api.direction.getRoutes(
         startCoordinate: riderCoord,
         endCoordinate: dropoffCoord,
         midCoordinates: midCoords,
         mode: BaatoDirectionMode.bike,
-        alternatives: true,  // Get multiple route options
         decodePolyline: true,
       );
 
-      // Pick the SHORTEST route by distance (not the default fastest)
-      final BaatoRouteResponse shortestRoute;
-      if (routeResult.data != null && routeResult.data!.length > 1) {
-        routeResult.data!.sort((a, b) =>
-          (a.distanceInMeters ?? double.infinity)
-              .compareTo(b.distanceInMeters ?? double.infinity));
-        shortestRoute = BaatoRouteResponse(
-          routeResult.timestamp,
-          routeResult.status,
-          routeResult.message,
-          [routeResult.data!.first],
-        );
-        debugPrint('[FullScreenMap] ✅ Selected shortest route: '
-            '${routeResult.data!.first.distanceInMeters?.toStringAsFixed(0)}m '
-            '(from ${routeResult.data!.length} alternatives)');
-      } else {
-        shortestRoute = routeResult;
-      }
-
-      // Draw the shortest route (smooth transition, no blink)
+      // Draw new route (smooth transition, no blink)
       await _mapController.routeManager.drawRouteFromResponse(
-        shortestRoute,
+        route,
         lineLayerProperties: BaatoLineLayerProperties(
           lineColor: '#FF6B35',
           lineWidth: 5.0,
