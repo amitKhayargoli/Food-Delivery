@@ -1,9 +1,11 @@
 import 'package:get_it/get_it.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'core/network/auth_interceptor.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/auth/domain/usecases/get_cached_user_usecase.dart';
 import 'features/auth/domain/usecases/google_sign_in_usecase.dart';
@@ -14,8 +16,15 @@ import 'features/auth/data/datasources/auth_remote_data_source.dart';
 import 'features/auth/data/datasources/auth_local_data_source.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/presentation/viewmodels/auth_viewmodel.dart';
-import 'core/services/supabase_client_service.dart';
 import 'core/config/supabase_config.dart';
+import 'core/services/supabase_client_service.dart';
+import 'core/services/api_service.dart';
+import 'core/services/storage_service.dart';
+import 'core/services/push_notification_service.dart';
+import 'core/services/delivery_location_service.dart';
+import 'core/services/rider_location_service.dart';
+import 'providers/rider_notes_provider.dart';
+import 'providers/notification_provider.dart';
 
 final sl = GetIt.instance;
 
@@ -28,6 +37,7 @@ Future<void> init() async {
     googleSignInUseCase: sl(),
     logoutUseCase: sl(),
     getCachedUserUseCase: sl(),
+    authRepository: sl(),
   ));
 
   // Use cases
@@ -44,13 +54,7 @@ Future<void> init() async {
   ));
 
   // Data sources
-  sl.registerLazySingleton<GoogleSignIn>(
-    () => GoogleSignIn(
-      scopes: const ['email', 'profile'],
-      serverClientId:
-          SupabaseConfig.googleWebClientId.isEmpty ? null : SupabaseConfig.googleWebClientId,
-    ),
-  );
+  sl.registerLazySingleton<GoogleSignIn>(() => GoogleSignIn.instance);
   sl.registerLazySingleton<AuthRemoteDataSource>(
     () => AuthRemoteDataSourceImpl(
       () => SupabaseClientService.client,
@@ -64,11 +68,31 @@ Future<void> init() async {
     ),
   );
 
-  // Core
-  sl.registerLazySingleton(() => Dio(BaseOptions(baseUrl: 'http://localhost:5000/api')));
-
-  // External
+  // External (register before Core so interceptor can reuse them)
   final sharedPreferences = await SharedPreferences.getInstance();
   sl.registerLazySingleton(() => sharedPreferences);
   sl.registerLazySingleton(() => const FlutterSecureStorage());
+
+  // Core
+  final dio = Dio(BaseOptions(baseUrl: SupabaseConfig.backendUrl));
+
+  // Add the auth interceptor for automatic 401 → token refresh handling
+  dio.interceptors.add(AuthInterceptor(
+    secureStorage: sl<FlutterSecureStorage>(),
+    dio: dio,
+  ));
+
+  sl.registerLazySingleton(() => dio);
+  sl.registerLazySingleton(() => ApiService(dio));
+  sl.registerLazySingleton(() => StorageService(dio));
+  sl.registerLazySingleton(() => PushNotificationService(dio));
+  sl.registerLazySingleton(() => DeliveryLocationService(sl<SharedPreferences>(), sl<ApiService>()));
+  sl.registerLazySingleton(() => RiderLocationService(sl<ApiService>()));
+  sl.registerLazySingleton(() => RiderNotesProvider(sl<ApiService>()));
+  sl.registerLazySingleton(() => NotificationProvider(sl<ApiService>()));
+  sl.registerLazySingleton<GlobalKey<NavigatorState>>(
+    () => GlobalKey<NavigatorState>(),
+  );
+
+
 }

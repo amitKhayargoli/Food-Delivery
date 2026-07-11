@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../navigation/app_navigation.dart';
-import 'login_screen.dart';
+import 'signup_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -32,12 +32,12 @@ class _SplashScreenState extends State<SplashScreen> {
     if (authProvider.isAuthenticated && authProvider.role != null) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => AppNavigation(role: authProvider.role!),
+          builder: (_) => AppNavigation(role: authProvider.activeRole),
         ),
       );
     } else {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => const SignUpScreen()),
       );
     }
   }
@@ -45,27 +45,29 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.restaurant_menu,
-              size: 100,
-              color: Colors.white,
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // Centered logo
+          Center(
+            child: Image.asset(
+              'assets/img/logo.png',
+              width: 280,
+              fit: BoxFit.contain,
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Rasoi',
-              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
+          ),
+          // Loading spinner at the bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 48,
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF5222D)),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

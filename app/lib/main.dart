@@ -1,19 +1,65 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:baato_maps/baato_maps.dart';
+import 'package:get_it/get_it.dart';
 import 'cart_provider.dart';
+import 'core/config/supabase_config.dart';
+import 'core/services/supabase_client_service.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
+import 'providers/rider_notes_provider.dart';
 import 'screens/auth/splash_screen.dart';
+import 'injection_container.dart' as di;
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseClientService.init();
+  await di.init();
+
+  // Initialize Baato Maps with API key
+  if (SupabaseConfig.isBaatoConfigured) {
+    Baato.configure(
+      apiKey: SupabaseConfig.baatoApiKey,
+      enableLogging: true,
+    );
+  }
+
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => CartProvider()),
-      ],
-      child: const MyApp(),
+    const ProviderScope(
+      child: MyAppWithProviders(),
     ),
   );
+}
+
+/// Inner widget that wraps the app with Provider (non-Riverpod) providers.
+class MyAppWithProviders extends StatelessWidget {
+  const MyAppWithProviders({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) {
+            final authProvider = AuthProvider();
+            // Register with GetIt so the AuthInterceptor can update
+            // the in-memory token after a refresh.
+            GetIt.instance.registerSingleton<AuthProvider>(
+              authProvider,
+              instanceName: 'auth_provider',
+            );
+            return authProvider;
+          },
+        ),
+        ChangeNotifierProvider(create: (_) => CartProvider(di.sl<SharedPreferences>())),
+        ChangeNotifierProvider(create: (_) => di.sl<RiderNotesProvider>()),
+        ChangeNotifierProvider(create: (_) => di.sl<NotificationProvider>()),
+      ],
+      child: const MyApp(),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -22,16 +68,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Rasoi Food Delivery',
+      title: 'Dailo Food Delivery',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'SF Pro Display',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF5733),
-          primary: const Color(0xFFFF5733),
-          secondary: const Color(0xFFFF6B4A),
-          background: const Color(0xFFFFFFFF),
-          surface: const Color(0xFFF7F8FA),
+          seedColor: const Color(0xFFF5222D),
+          primary: const Color(0xFFF5222D),
+          secondary: const Color(0xFFFF5745),
+          surface: const Color(0xFFFFFFFF),
         ),
         scaffoldBackgroundColor: const Color(0xFFFFFFFF),
         textTheme: const TextTheme(
@@ -45,11 +90,11 @@ class MyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
+      navigatorKey: di.sl<GlobalKey<NavigatorState>>(),
       home: const SplashScreen(),
     );
   }
 }
-
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
@@ -103,7 +148,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Center(
         // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+        // in the center of the parent.
         child: Column(
           // Column is also a layout widget. It takes a list of children and
           // arranges them vertically. By default, it sizes itself to fit its
@@ -118,7 +163,7 @@ class _MyHomePageState extends State<MyHomePage> {
           // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
           // action in the IDE, or press "p" in the console), to see the
           // wireframe for each widget.
-          mainAxisAlignment: .center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text('You have pushed the button this many times:'),
             Text(

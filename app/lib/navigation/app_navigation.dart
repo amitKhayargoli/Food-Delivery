@@ -1,106 +1,543 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
+import 'package:convex_bottom_bar/convex_bottom_bar.dart';
+import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
+import '../core/services/supabase_client_service.dart';
 import '../screens/user/home_screen.dart';
+import '../screens/user/search_screen.dart';
+import '../screens/user/cart_screen.dart';
+import '../screens/user/profile_screen.dart';
 import '../screens/owner/owner_dashboard_screen.dart';
 import '../screens/owner/owner_menu_screen.dart';
 import '../screens/owner/owner_analytics_screen.dart';
 import '../screens/delivery/delivery_jobs_screen.dart';
+import '../screens/delivery/delivery_profile_screen.dart';
+import '../screens/user/active_orders_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 
 class AppNavigation extends StatefulWidget {
   final String role;
-  
+
   const AppNavigation({super.key, required this.role});
 
   @override
   State<AppNavigation> createState() => _AppNavigationState();
 }
 
+/// Custom style hook to control icon sizes — active icon slightly larger than inactive.
+class _NavBarStyle extends StyleHook {
+  @override
+  double? get iconSize => 24;
+
+  @override
+  double get activeIconSize => 28;
+
+  @override
+  double get activeIconMargin => 5;
+
+  @override
+  TextStyle textStyle(Color color, String? fontFamily) => TextStyle(
+        fontSize: 10,
+        color: color,
+        fontFamily: fontFamily,
+      );
+}
+
 class _AppNavigationState extends State<AppNavigation> {
   int _currentIndex = 0;
+  bool _notifInitialized = false;
+  /// Shared cart icon widget used in the nav bar (inactive state).
+  static final Widget _cartIcon = SvgPicture.asset(
+    'assets/icons/cart.svg',
+    fit: BoxFit.scaleDown,
+  );
+
+  /// Cart icon with white fill for the active state (sits on the red circle).
+  static final Widget _cartIconActive = SvgPicture.asset(
+    'assets/icons/cart.svg',
+    fit: BoxFit.scaleDown,
+    colorFilter: const ColorFilter.mode(
+      Colors.white,
+      BlendMode.srcIn,
+    ),
+  );
+
+  /// The effective role — uses the live value from AuthProvider's activeRole
+  /// (which the user can switch without logging out), and falls back to the
+  /// constructor parameter if AuthProvider hasn't loaded yet.
+  String get _effectiveRole {
+    final activeRole = context.watch<AuthProvider>().activeRole;
+    if (activeRole.isNotEmpty) return activeRole.toUpperCase();
+    return widget.role.toUpperCase();
+  }
 
   List<Widget> get _userScreens => [
-    const UserHomeScreen(),
-    const Center(child: Text('User Orders')),
-    const Center(child: Text('User Profile')),
-  ];
+        const UserHomeScreen(),
+        const SearchScreen(),
+        const ActiveOrdersScreen(),
+        const CartScreen(),
+        const ProfileScreen(),
+      ];
 
   List<Widget> get _adminScreens => [
-    const AdminDashboardScreen(),
-    const Center(child: Text('Admin Restaurants')),
-    const Center(child: Text('Admin Orders')),
-  ];
+        const AdminDashboardScreen(),
+        const Center(child: Text('Admin Restaurants')),
+        const Center(child: Text('Admin Orders')),
+      ];
 
   List<Widget> get _ownerScreens => [
-    const OwnerDashboardScreen(),
-    const OwnerMenuScreen(),
-    const OwnerAnalyticsScreen(),
-  ];
+        const OwnerDashboardScreen(),
+        const OwnerMenuScreen(),
+        const OwnerAnalyticsScreen(),
+        const ProfileScreen(),
+      ];
 
   List<Widget> get _deliveryScreens => [
-    const DeliveryJobsScreen(),
-    const Center(child: Text('Delivery History')),
-    const Center(child: Text('Delivery Profile')),
-  ];
+        const DeliveryJobsScreen(),
+        const DeliveryProfileScreen(),
+      ];
 
   List<Widget> get _currentScreens {
-    switch (widget.role.toUpperCase()) {
-      case 'ADMIN': return _adminScreens;
-      case 'RESTAURANT_OWNER': return _ownerScreens;
-      case 'DELIVERY_BOY': return _deliveryScreens;
+    switch (_effectiveRole) {
+      case 'ADMIN':
+        return _adminScreens;
+      case 'RESTAURANT_OWNER':
+        return _ownerScreens;
+      case 'DELIVERY_BOY':
+        return _deliveryScreens;
       case 'USER':
-      default: return _userScreens;
+      case 'CUSTOMER':
+      default:
+        return _userScreens;
     }
   }
 
-  List<BottomNavigationBarItem> get _userItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-    BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Orders'),
-    BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-  ];
+  List<TabItem> get _userNavItems => [
+        const TabItem(icon: Icons.home_rounded, title: 'Home'),
+        const TabItem(icon: Icons.search_rounded, title: 'Search'),
+        const TabItem(icon: Icons.receipt_long_rounded, title: 'Orders'),
+        TabItem(
+          icon: _cartIcon,
+          activeIcon: _cartIconActive,
+          title: 'Cart',
+          isIconBlend: false,
+        ),
+        const TabItem(icon: Icons.person_rounded, title: 'Profile'),
+      ];
 
-  List<BottomNavigationBarItem> get _adminItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dash'),
-    BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Restaurants'),
-    BottomNavigationBarItem(icon: Icon(Icons.receipt), label: 'Orders'),
-  ];
+  List<TabItem> get _adminNavItems => const [
+        TabItem(icon: Icons.dashboard_rounded, title: 'Dash'),
+        TabItem(icon: Icons.store_rounded, title: 'Restaurants'),
+        TabItem(icon: Icons.receipt_rounded, title: 'Orders'),
+      ];
 
-  List<BottomNavigationBarItem> get _ownerItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Live Orders'),
-    BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
-    BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Insights'),
-  ];
+  List<TabItem> get _ownerNavItems => const [
+        TabItem(icon: Icons.list_alt_rounded, title: 'Live Orders'),
+        TabItem(icon: Icons.restaurant_menu_rounded, title: 'Menu'),
+        TabItem(icon: Icons.bar_chart_rounded, title: 'Insights'),
+        TabItem(icon: Icons.person_rounded, title: 'Profile'),
+      ];
 
-  List<BottomNavigationBarItem> get _deliveryItems => const [
-    BottomNavigationBarItem(icon: Icon(Icons.moped), label: 'Jobs'),
-    BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-    BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-  ];
+  List<TabItem> get _deliveryNavItems => const [
+        TabItem(icon: Icons.moped_rounded, title: 'Jobs'),
+        TabItem(icon: Icons.person_rounded, title: 'My Profile'),
+      ];
 
-  List<BottomNavigationBarItem> get _currentItems {
-    switch (widget.role.toUpperCase()) {
-      case 'ADMIN': return _adminItems;
-      case 'RESTAURANT_OWNER': return _ownerItems;
-      case 'DELIVERY_BOY': return _deliveryItems;
+  List<TabItem> get _currentNavItems {
+    switch (_effectiveRole) {
+      case 'ADMIN':
+        return _adminNavItems;
+      case 'RESTAURANT_OWNER':
+        return _ownerNavItems;
+      case 'DELIVERY_BOY':
+        return _deliveryNavItems;
       case 'USER':
-      default: return _userItems;
+      case 'CUSTOMER':
+      default:
+        return _userNavItems;
     }
+  }
+
+  /// Show a bottom sheet allowing the user to switch their active role.
+  void _showRoleSwitcher(AuthProvider authProvider) {
+    final roles = authProvider.availableRoles;
+    if (roles.length <= 1) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Switch Role',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1C1C),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose how you want to use the app',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                ),
+                const SizedBox(height: 20),
+                ...roles.map((role) => _buildRoleOption(ctx, role, authProvider)),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRoleOption(BuildContext ctx, String role, AuthProvider authProvider) {
+    final isActive = authProvider.activeRole == role;
+    IconData icon;
+    String label;
+    String subtitle;
+
+    switch (role) {
+      case 'RESTAURANT_OWNER':
+        icon = Icons.store_rounded;
+        label = 'Restaurant Owner';
+        subtitle = 'Manage your restaurant and orders';
+        break;
+      case 'DELIVERY_BOY':
+        icon = Icons.moped_rounded;
+        label = 'Delivery Rider';
+        subtitle = 'Accept delivery jobs and earn';
+        break;
+      case 'USER':
+      case 'CUSTOMER':
+      default:
+        icon = Icons.person_rounded;
+        label = 'Customer';
+        subtitle = 'Browse restaurants and order food';
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: isActive
+            ? const Color(0xFFFFF1F0)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: isActive
+              ? null
+              : () {
+                  authProvider.switchActiveRole(role);
+                  Navigator.pop(ctx);
+                },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? const Color(0xFFBB0018).withValues(alpha: 0.1)
+                        : const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isActive
+                        ? const Color(0xFFBB0018)
+                        : const Color(0xFF8E8E93),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: isActive
+                                  ? const Color(0xFFBB0018)
+                                  : const Color(0xFF1A1C1C),
+                            ),
+                          ),
+                          if (isActive) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFBB0018),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Active',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8E8E93),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isActive)
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: Color(0xFFBFBFBF),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Derive the notification role from the effective app role.
+  String _notificationRoleFor(String appRole) {
+    switch (appRole) {
+      case 'RESTAURANT_OWNER':
+        return 'owner';
+      case 'DELIVERY_BOY':
+        return 'rider';
+      case 'ADMIN':
+        return 'admin';
+      case 'USER':
+      case 'CUSTOMER':
+      default:
+        return 'customer';
+    }
+  }
+
+  /// Re-initialize the notification provider when the active role changes.
+  /// This ensures the user only sees notifications relevant to their
+  /// currently active role (e.g. customer vs restaurant owner).
+  void _reinitializeNotifications(AuthProvider authProvider) {
+    final token = authProvider.token;
+    final user = SupabaseClientService.client.auth.currentUser;
+    if (token == null || user == null) return;
+
+    final notifProvider = context.read<NotificationProvider>();
+    final role = _notificationRoleFor(authProvider.activeRole);
+    notifProvider.setRole(role);
+    notifProvider.init(token, user.id, role: role);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
+    final authProvider = context.watch<AuthProvider>();
+    final notifProvider = context.read<NotificationProvider>();
+
+    // Initialize notification provider once auth is ready
+    if (authProvider.isAuthenticated && authProvider.token != null && !_notifInitialized) {
+      _notifInitialized = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reinitializeNotifications(authProvider);
+      });
+    }
+
+    // Re-initialize when role changes (user switches between customer/owner/rider)
+    if (_notifInitialized &&
+        authProvider.isAuthenticated &&
+        authProvider.token != null) {
+      final expectedRole = _notificationRoleFor(authProvider.activeRole);
+      if (notifProvider.currentRole != expectedRole) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _reinitializeNotifications(authProvider);
+        });
+      }
+    }
+
+    // Reset notification init flag on logout so it re-initializes on next login
+    if (!authProvider.isAuthenticated && _notifInitialized) {
+      _notifInitialized = false;
+    }
+
+    // Show a snackbar if the role was just changed by a realtime update
+    final roleChangeMsg = authProvider.roleChangeMessage;
+    if (roleChangeMsg != null) {
+      authProvider.clearRoleChangeMessage();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.swap_horiz, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(roleChangeMsg)),
+              ],
+            ),
+            backgroundColor: const Color(0xFF1A1C1C),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: const Color(0xFFEB1727),
+              onPressed: () {},
+            ),
+          ),
+        );
+      });
+    }
+
+    // Clamp index when role switch changes screen count
+    if (_currentIndex >= _currentScreens.length) {
+      _currentIndex = 0;
+    }
+
     return Scaffold(
       body: _currentScreens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: theme.colorScheme.primary,
-        unselectedItemColor: const Color(0xFF8E8E93),
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        items: _currentItems,
+      bottomNavigationBar: _LongPressDetector(
+        onLongPress: () {
+          if (authProvider.availableRoles.length > 1) {
+            _showRoleSwitcher(authProvider);
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.white, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        authProvider.isLoading
+                            ? 'Loading your roles...'
+                            : 'No other roles available to switch to',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF1A1C1C),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+              ),
+            );
+          }
+        },
+        child: StyleProvider(
+        style: _NavBarStyle(),
+        child: ConvexAppBar(
+          key: ValueKey(_effectiveRole),
+          style: TabStyle.reactCircle,
+          backgroundColor: Colors.white,
+          activeColor: const Color(0xFFF5222D),
+          color: const Color(0xFF424242),
+          elevation: 12,
+          top: -28,
+          initialActiveIndex: _currentIndex,
+          onTap: (index) => setState(() => _currentIndex = index),
+          items: _currentNavItems,
+        ),
       ),
+        ),
     );
   }
 }
+
+/// Detects a long press on the child widget using raw pointer events.
+/// This bypasses the gesture arena, so it works even when the child
+/// (e.g. ConvexAppBar) has its own internal gesture recognizers that
+/// would otherwise swallow the parent's [GestureDetector.onLongPress].
+class _LongPressDetector extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onLongPress;
+
+  const _LongPressDetector({
+    required this.child,
+    this.onLongPress,
+  });
+
+  @override
+  State<_LongPressDetector> createState() => _LongPressDetectorState();
+}
+
+class _LongPressDetectorState extends State<_LongPressDetector> {
+  Timer? _timer;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (widget.onLongPress == null) return;
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 500), () {
+      HapticFeedback.mediumImpact();
+      if (mounted) widget.onLongPress?.call();
+    });
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _timer?.cancel();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _timer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: widget.child,
+    );
+  }
+}
+

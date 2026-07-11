@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: dailo --default, dailo-dark --prefersdark, light, dark, cupcake, synthwave, retro, autumn, luxury, coffee, dim, night;
+}
+
+@plugin "daisyui/theme" {
+  name: "dailo";
+  default: true;
+
+  --color-primary: #F5222D;
+  --color-primary-content: #ffffff;
+  --color-secondary: #FF4D4F;
+  --color-secondary-content: #ffffff;
+  --color-accent: #FF7875;
+  --color-accent-content: #1f2937;
+  --color-neutral: #1a1a2e;
+  --color-neutral-content: #ffffff;
+  --color-base-100: #ffffff;
+  --color-base-200: #d1d5db;
+  --color-base-300: #9ca3af;
+  --color-base-content: #1f2937;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #22c55e;
+  --color-success-content: #ffffff;
+  --color-warning: #f59e0b;
+  --color-warning-content: #1f2937;
+  --color-error: #ef4444;
+  --color-error-content: #ffffff;
+  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-badge: 1.9rem;
+  --animation-btn: 0.25s;
+  --animation-input: 0.2s;
+  --btn-focus-scale: 0.95;
+  --tab-radius: 0.5rem;
+}
+
+/* ── Theme-specific overrides (outside @plugin block so they take effect) ── */
+[data-theme="dailo"],
+[data-theme="dailo-dark"] {
+  --input-color: color-mix(in oklab, var(--color-base-content) 35%, #0000);
+}
+
+/* ── Global style overrides ────────────────────────────────────── */
+
+/* Darker placeholders for better visibility on both themes */
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+  color: oklch(0.55 0 0) !important;
+  opacity: 1 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  input::placeholder,
+  textarea::placeholder,
+  select::placeholder {
+    color: oklch(0.6 0 0) !important;
+  }
+}
+
+/* Table border visibility */
+.table :where(th, td) {
+  border-color: oklch(0.82 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  .table :where(th, td) {
+    border-color: oklch(0.3 0 0);
+  }
+}
+
+@plugin "daisyui/theme" {
+  name: "dailo-dark";
+
+  --color-primary: #F5222D;
+  --color-primary-content: #ffffff;
+  --color-secondary: #FF4D4F;
+  --color-secondary-content: #ffffff;
+  --color-accent: #FF7875;
+  --color-accent-content: #1f2937;
+  --color-neutral: #0f0f1a;
+  --color-neutral-content: #e5e7eb;
+  --color-base-100: #1a1a2e;
+  --color-base-200: #2a2a4e;
+  --color-base-300: #3a3a5e;
+  --color-base-content: #e5e7eb;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #22c55e;
+  --color-success-content: #ffffff;
+  --color-warning: #f59e0b;
+  --color-warning-content: #1f2937;
+  --color-error: #ef4444;
+  --color-error-content: #ffffff;
+  --color-scheme: dark;
+  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-badge: 1.9rem;
+  --animation-btn: 0.25s;
+  --animation-input: 0.2s;
+  --btn-focus-scale: 0.95;
+  --tab-radius: 0.5rem;
+}

@@ -1,11 +1,25 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:get_it/get_it.dart';
+import 'package:app/core/services/api_service.dart';
 import 'package:app/providers/auth_provider.dart';
 import 'package:app/screens/auth/login_screen.dart';
 import 'package:app/screens/auth/signup_screen.dart';
 
 void main() {
+  setUp(() {
+    // Register ApiService in GetIt so SignUpScreen can access it
+    final sl = GetIt.instance;
+    if (!sl.isRegistered<Dio>()) {
+      sl.registerLazySingleton<Dio>(() => Dio(BaseOptions(baseUrl: 'http://localhost')));
+    }
+    if (!sl.isRegistered<ApiService>()) {
+      sl.registerLazySingleton<ApiService>(() => ApiService(sl<Dio>()));
+    }
+  });
+
   testWidgets('LoginScreen has required fields and buttons', (WidgetTester tester) async {
     final authProvider = AuthProvider();
 
@@ -20,11 +34,11 @@ void main() {
       ),
     );
 
-    expect(find.text('Welcome back!'), findsOneWidget);
-    expect(find.text('Email or Phone Number'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
-    expect(find.text('Forgot Password?'), findsOneWidget);
-    expect(find.text('Login'), findsWidgets);
+    // The actual text is 'Welcome Back' (capital B)
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Sign in to continue'), findsOneWidget);
+    expect(find.text('Enter Your Phone Number'), findsOneWidget);
+    expect(find.text('Continue'), findsWidgets);
     expect(find.text('Continue with Google'), findsOneWidget);
   });
 
@@ -42,12 +56,13 @@ void main() {
       ),
     );
 
-    expect(find.text('Create an Account'), findsOneWidget);
-    expect(find.text('Username'), findsOneWidget);
-    expect(find.text('Email Address'), findsOneWidget);
-    expect(find.text('Phone Number'), findsOneWidget);
-    expect(find.text('Password'), findsWidgets);
-    expect(find.text('Sign Up'), findsWidgets);
-    expect(find.text('Continue with Google'), findsOneWidget);
+    // The actual text is 'Create an account' (lowercase 'a')
+    expect(find.text('Create an account'), findsOneWidget);
+    expect(find.text('Sign up with your details'), findsOneWidget);
+    expect(find.text('Enter your Full Name'), findsOneWidget);
+    expect(find.text('Enter your Phone Number'), findsOneWidget);
+    expect(find.text('Enter Your Email (optional)'), findsOneWidget);
+    expect(find.text('Continue'), findsWidgets);
+    expect(find.text('Continue with Google'), findsNothing);
   });
 }

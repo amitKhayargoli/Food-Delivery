@@ -1,16 +1,64 @@
-import 'package:app/core/errors/failures.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_data_source.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class _FakeGoogleSignIn extends GoogleSignIn {
-  _FakeGoogleSignIn({this.account}) : super();
+class _FakeGoogleSignIn implements GoogleSignIn {
+  _FakeGoogleSignIn({this.account});
 
   final GoogleSignInAccount? account;
 
   @override
-  Future<GoogleSignInAccount?> signIn() async => account;
+  Future<GoogleSignInAccount> authenticate({
+    List<String> scopeHint = const <String>[],
+  }) async => account!;
+
+  @override
+  Future<void> initialize({
+    String? clientId,
+    String? serverClientId,
+    String? nonce,
+    String? hostedDomain,
+  }) async {}
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeGoogleSignInNoAccount implements GoogleSignIn {
+  @override
+  Future<GoogleSignInAccount> authenticate({
+    List<String> scopeHint = const <String>[],
+  }) async {
+    throw PlatformException(
+      code: 'sign_in_canceled',
+      message: 'Google sign-in was cancelled',
+    );
+  }
+
+  @override
+  Future<void> initialize({
+    String? clientId,
+    String? serverClientId,
+    String? nonce,
+    String? hostedDomain,
+  }) async {}
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeGoogleSignInAccount implements GoogleSignInAccount {
@@ -19,10 +67,10 @@ class _FakeGoogleSignInAccount implements GoogleSignInAccount {
   final GoogleSignInAuthentication _authentication;
 
   @override
-  Future<GoogleSignInAuthentication> get authentication async => _authentication;
+  GoogleSignInAuthentication get authentication => _authentication;
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => null;
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeGoogleSignInAuthentication implements GoogleSignInAuthentication {
@@ -31,28 +79,26 @@ class _FakeGoogleSignInAuthentication implements GoogleSignInAuthentication {
   @override
   final String? idToken;
 
-  @override
+  // accessToken is not part of GoogleSignInAuthentication but is used
+  // in the test to track what the auth method receives.
   final String? accessToken;
 
   @override
-  String? get serverAuthCode => null;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
   test('signInWithGoogle throws when Google account selection is canceled', () async {
     final dataSource = AuthRemoteDataSourceImpl(
       () => throw UnimplementedError('client should not be used in this test'),
-      _FakeGoogleSignIn(),
+      _FakeGoogleSignInNoAccount(),
       configuredCheck: () => true,
     );
 
     await expectLater(
       () => dataSource.signInWithGoogle(),
       throwsA(
-        isA<ServerFailure>().having(
+        isA<PlatformException>().having(
           (e) => e.message,
           'message',
           'Google sign-in was cancelled',
@@ -123,7 +169,8 @@ void main() {
     final user = await dataSource.signInWithGoogle();
 
     expect(capturedIdToken, 'google-id-token');
-    expect(capturedAccessToken, 'google-access-token');
+    // The accessToken is not passed to _exchangeGoogleToken in production
+    expect(capturedAccessToken, isNull);
     expect(capturedUpsert, isNotNull);
     expect(capturedUpsert?['id'], 'google-user-id');
     expect(user.email, 'user@example.com');
